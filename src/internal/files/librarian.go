@@ -5,6 +5,8 @@ import (
 	"AutoAnimeDownloader/src/internal/nyaa"
 
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -196,16 +198,49 @@ func (o *organizer) Organize(req OrganizeRequest) ([]string, error) {
 		}
 
 		if err := o.move(src, dest); err != nil {
-			o.cleanupIfEmpty(destDir, dirExisted)
-			if isCrossDevice(err) {
-				return nil, fmt.Errorf("cannot move %s -> %s: download folder and library must be on the same volume: %w", src, dest, err)
+			if !isCrossDevice(err) {
+				o.cleanupIfEmpty(destDir, dirExisted)
+				return nil, fmt.Errorf("failed to move %s -> %s: %w", src, dest, err)
 			}
-			return nil, fmt.Errorf("failed to move %s -> %s: %w", src, dest, err)
+			// EXDEV entre pastas no MESMO disco: montagens bind separadas de uma mesma
+			// particao podem recusar rename() com EXDEV mesmo com st_dev igual (o kernel
+			// compara as montagens, nao os dispositivos). Fallback copia+apaga — semanticamente
+			// o mesmo move para este fluxo, pois o torrent sera removido logo depois.
+			if err := o.copyThenDelete(src, dest); err != nil {
+				o.cleanupIfEmpty(destDir, dirExisted)
+				return nil, fmt.Errorf("failed to copy %s -> %s: %w", src, dest, err)
+			}
 		}
 		created = append(created, dest)
 	}
 
 	return created, nil
+}
+
+// copyThenDelete copia src para dest byte a byte e apaga src. Fallback do rename quando o
+// kernel recusa o move entre bind mounts da mesma particao.
+func (o *organizer) copyThenDelete(src, dest string) error {
+	in, err := o.fs.OpenFile(src, os.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := o.fs.Create(dest)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		_ = o.fs.Remove(dest)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = o.fs.Remove(dest)
+		return err
+	}
+	return o.fs.Remove(src)
 }
 
 func (o *organizer) RemoveFromLibrary(path string) error {
@@ -251,10 +286,14 @@ func (o *organizer) ProbePath(completedPath, downloadPath string) error {
 	defer func() { _ = o.fs.Remove(probeSrc) }()
 
 	if err := o.move(probeSrc, probeDst); err != nil {
-		if isCrossDevice(err) {
-			return fmt.Errorf("download folder (%s) and library (%s) must be on the same filesystem: %w", downloadPath, completedPath, err)
+		if !isCrossDevice(err) {
+			return fmt.Errorf("move probe failed: %w", err)
 		}
-		return fmt.Errorf("move probe failed: %w", err)
+		// EXDEV entre bind mounts da mesma particao: aceitavel, o Organize tem fallback
+		// copia+apaga. Valida apenas que a biblioteca aceita escrita.
+		if err := o.fs.WriteFile(probeDst, []byte("probe"), 0644); err != nil {
+			return fmt.Errorf("download folder (%s) and library (%s) rejected both move and write: %w", downloadPath, completedPath, err)
+		}
 	}
 	_ = o.fs.Remove(probeDst)
 

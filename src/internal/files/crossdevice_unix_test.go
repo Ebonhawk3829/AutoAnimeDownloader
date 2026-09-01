@@ -27,40 +27,54 @@ func exdevMove(oldname, newname string) error {
 	return &os.LinkError{Op: "rename", Old: oldname, New: newname, Err: syscall.EXDEV}
 }
 
-func TestOrganizeCrossDeviceCleansUp(t *testing.T) {
+// EXDEV agora tem fallback copia+apaga (bind mounts da mesma particao recusam rename com
+// EXDEV mesmo com st_dev igual), entao o Organize segue e o arquivo chega ao destino.
+func TestOrganizeCrossDeviceFallsBackToCopy(t *testing.T) {
 	tmp := t.TempDir()
 	dataDir := filepath.Join(tmp, "save", "id")
 	completed := filepath.Join(tmp, "completed")
 	writeFile(t, filepath.Join(dataDir, "ep.mkv"), "x")
 
 	lib := &organizer{fs: NewOSFileSystem(), move: exdevMove}
-	_, err := lib.Organize(OrganizeRequest{
+	created, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "A", CompletedPath: completed,
 		EpisodeNumber: intPtr(1),
 	})
-	if err == nil {
-		t.Fatalf("expected cross-device error")
+	if err != nil {
+		t.Fatalf("expected the copy fallback to succeed, got %v", err)
 	}
-	if !isCrossDevice(errors.Unwrap(err)) {
-		t.Errorf("error should wrap a cross-device error: %v", err)
+	if len(created) != 1 {
+		t.Fatalf("created = %v, want 1", created)
 	}
-	// No orphan library folder left behind.
-	if _, statErr := os.Stat(filepath.Join(completed, "A")); statErr == nil {
-		t.Errorf("orphan library folder should have been cleaned up")
+	data, err := os.ReadFile(created[0])
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	if string(data) != "x" {
+		t.Errorf("dest content = %q, want %q", data, "x")
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "ep.mkv")); !os.IsNotExist(err) {
+		t.Error("source should have been deleted after the copy")
 	}
 }
 
-func TestProbePathFailsWhenMoveUnsupported(t *testing.T) {
+// ProbePath com EXDEV cai no fallback de escrita: a biblioteca aceita escrever, entao o
+// probe passa (o Organize resolve o move com copia+apaga).
+func TestProbePathCrossDeviceFallsBackToWrite(t *testing.T) {
 	tmp := t.TempDir()
 	completed := filepath.Join(tmp, "completed")
 	download := filepath.Join(tmp, "downloads")
 
 	lib := &organizer{fs: NewOSFileSystem(), move: exdevMove}
-	if err := lib.ProbePath(completed, download); err == nil {
-		t.Fatalf("expected error from ProbePath when the move func fails")
+	if err := lib.ProbePath(completed, download); err != nil {
+		t.Fatalf("expected the write fallback to pass, got %v", err)
 	}
-	// Probe source cleaned up despite the failure.
-	if _, statErr := os.Stat(filepath.Join(download, ".aad_move_probe")); statErr == nil {
-		t.Errorf("probe source not cleaned up after failure")
+	for _, p := range []string{
+		filepath.Join(download, ".aad_move_probe"),
+		filepath.Join(completed, ".aad_move_probe"),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("probe file leaked at %s", p)
+		}
 	}
 }

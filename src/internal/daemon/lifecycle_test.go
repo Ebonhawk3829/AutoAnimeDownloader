@@ -222,10 +222,9 @@ func mockEmptyAniList(t *testing.T) {
 	t.Cleanup(restore)
 }
 
-// P3.3 — download folder and library on different filesystems must abort the pass
-// with an actionable LastCheckError instead of downloading episodes that can never be
-// moved into the library.
-func TestAnimeVerification_NoHardlinkSupportAbortsPass(t *testing.T) {
+// EXDEV entre bind mounts da mesma particao (montagens separadas de /dev/sda1) nao aborta
+// mais o passe: o Organize tem fallback copia+apaga, entao o probe aceita e o passe segue.
+func TestAnimeVerification_CrossMountFallsBackToCopy(t *testing.T) {
 	mockEmptyAniList(t)
 
 	base := t.TempDir()
@@ -240,15 +239,14 @@ func TestAnimeVerification_NoHardlinkSupportAbortsPass(t *testing.T) {
 
 	AnimeVerification(context.Background(), fm, state, nil, torrents.NewFakeBackend(), librarian)
 
+	// EXDEV entre bind mounts da mesma particao agora tem fallback copia+apaga, entao o
+	// probe nao aborta mais nesse cenario — o passe segue.
 	err := state.GetLastCheckError()
-	if err == nil {
-		t.Fatal("expected LastCheckError to be set when the paths are on different filesystems")
+	if err != nil {
+		t.Fatalf("expected no LastCheckError: EXDEV between bind mounts falls back to copy, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "same filesystem") {
-		t.Errorf("LastCheckError should carry the same message the config endpoint returns, got %q", err)
-	}
-	if fm.passRan() {
-		t.Error("verification must abort before running the pass when the move probe fails")
+	if !fm.passRan() {
+		t.Error("verification should run the pass: the copy fallback handles cross-mount moves")
 	}
 }
 
