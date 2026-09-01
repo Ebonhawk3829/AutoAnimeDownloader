@@ -63,7 +63,7 @@ func TestBuildVarsDownloadFailedReason(t *testing.T) {
 	if vars["reason"] != ReasonNotFound {
 		t.Fatalf("reason var = %q", vars["reason"])
 	}
-	if want := "Frieren EP 5 falhou: " + ReasonNotFound; vars["message"] != want {
+	if want := "Frieren EP 5 failed: " + ReasonNotFound; vars["message"] != want {
 		t.Fatalf("message = %q, want %q", vars["message"], want)
 	}
 }
@@ -219,10 +219,10 @@ func TestNotify_BatchesEventsWithinWindow(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("esperava 1 request para os 3 eventos, obteve %d: %v", len(got), got)
 	}
-	want := "3|3 downloads concluídos|" +
-		"Re:ZERO EP 12 foi baixado com sucesso\n" +
-		"Frieren EP 5 foi baixado com sucesso\n" +
-		"Dandadan EP 3 foi baixado com sucesso"
+	want := "3|3 downloads completed|" +
+		"Re:ZERO EP 12 downloaded successfully\n" +
+		"Frieren EP 5 downloaded successfully\n" +
+		"Dandadan EP 3 downloaded successfully"
 	if got[0] != want {
 		t.Errorf("body agrupado errado:\n obtido: %q\nesperado: %q", got[0], want)
 	}
@@ -243,7 +243,7 @@ func TestNotify_SeparateBatchPerEvent(t *testing.T) {
 		t.Fatalf("esperava 2 requests (uma por evento), obteve %d: %v", len(got), got)
 	}
 	seen := map[string]bool{got[0]: true, got[1]: true}
-	if !seen["Download concluído"] || !seen["Erro no download"] {
+	if !seen["Download completed"] || !seen["Download failed"] {
 		t.Errorf("esperava um título por evento, obteve %v", got)
 	}
 }

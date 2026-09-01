@@ -1016,7 +1016,7 @@ func TestProcessAnimeEpisodes_NoMagnets_SkipsNewEpisodeWebhook(t *testing.T) {
 		case <-time.After(300 * time.Millisecond):
 		}
 	}
-	if len(got) != 1 || got[0] != "Erro no download" {
+	if len(got) != 1 || got[0] != "Download failed" {
 		t.Errorf("esperava só o webhook de falha, obteve %v", got)
 	}
 }

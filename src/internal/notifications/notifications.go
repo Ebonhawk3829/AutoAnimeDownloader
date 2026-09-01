@@ -24,9 +24,9 @@ const (
 
 // Motivos de falha de download, usados como {{reason}} e na mensagem padrão.
 const (
-	ReasonNotFound         = "nenhum torrent encontrado"
-	ReasonDownloadRejected = "torrent rejeitado"
-	ReasonNoDiskSpace      = "espaço em disco insuficiente"
+	ReasonNotFound         = "no torrent found"
+	ReasonDownloadRejected = "torrent rejected"
+	ReasonNoDiskSpace      = "insufficient disk space"
 )
 
 var reVar = regexp.MustCompile(`\{\{(\w+)\}\}`)
@@ -96,31 +96,31 @@ func batchTitle(event Event, items []item) string {
 	}
 	switch event {
 	case NewEpisode:
-		return fmt.Sprintf("%d novos episódios detectados", len(items))
-	case DownloadFailed:
-		return fmt.Sprintf("%d erros no download", len(items))
-	case DownloadCompleted:
-		return fmt.Sprintf("%d downloads concluídos", len(items))
-	}
-	return ""
+                return fmt.Sprintf("%d new episodes detected", len(items))
+        case DownloadFailed:
+                return fmt.Sprintf("%d download failures", len(items))
+        case DownloadCompleted:
+                return fmt.Sprintf("%d downloads completed", len(items))
+        }
+        return ""
 }
 
 func eventStrings(animeName string, episode int, event Event, reason string) (title, message string) {
-	switch event {
-	case NewEpisode:
-		return "Novo episódio detectado",
-			fmt.Sprintf("%s EP %d detectado, iniciando download", animeName, episode)
-	case DownloadFailed:
-		if reason == "" {
-			reason = "todas as tentativas falharam"
-		}
-		return "Erro no download",
-			fmt.Sprintf("%s EP %d falhou: %s", animeName, episode, reason)
-	case DownloadCompleted:
-		return "Download concluído",
-			fmt.Sprintf("%s EP %d foi baixado com sucesso", animeName, episode)
-	}
-	return "", ""
+        switch event {
+        case NewEpisode:
+                return "New episode detected",
+                        fmt.Sprintf("%s EP %d detected, starting download", animeName, episode)
+        case DownloadFailed:
+                if reason == "" {
+                        reason = "all attempts failed"
+                }
+                return "Download failed",
+                        fmt.Sprintf("%s EP %d failed: %s", animeName, episode, reason)
+        case DownloadCompleted:
+                return "Download completed",
+                        fmt.Sprintf("%s EP %d downloaded successfully", animeName, episode)
+        }
+        return "", ""
 }
 
 // jsonEscape devolve o valor pronto para ser colado DENTRO de uma string JSON (sem as aspas
