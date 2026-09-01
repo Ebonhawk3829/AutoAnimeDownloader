@@ -56,7 +56,13 @@ func selectEpisodes(
 		sel.checked = append(sel.checked, key)
 
 		savedEp := savedEpisodesFullMap[key]
-		isInTorrents := episodeInTorrents(savedEp.EpisodeHash, torrentsHashSet)
+		// "Content present" = the torrent is still in the client OR the episode was already
+		// organized into the library. In move-on-complete mode the torrent is removed right
+		// after the move, so a record with LibraryPaths set and no torrent is DONE, not
+		// missing — treating it as missing caused an endless redownload loop (download →
+		// organize → remove torrent → next pass sees no torrent → redownload).
+		isInTorrents := episodeInTorrents(savedEp.EpisodeHash, torrentsHashSet) ||
+			len(savedEp.LibraryPaths) > 0
 
 		shouldDownload, shouldDelete, skipCode := checkEpisode(configs, maxEpisodes, ep, anime, savedEpisodesMap[key], &downloadedEpisodesOfAnime, isInTorrents, keepSet[key], savedEp.IsBatch)
 
