@@ -205,7 +205,15 @@ func ManualDownloadEpisode(fm FileManagerInterface, backend torrents.TorrentBack
 		return files.EpisodeStruct{}, err
 	}
 
-	results := searchNyaaForSingleEpisode(*targetNode, details.mediaList.Media.Title, nil, anilist.MediaRelations{}, anilist.LastAiredEpisode(details.mediaList))
+	// Override de busca por anime (AnimeSettings.SearchQueryOverride). Vazio = variantes
+	// padrao do AniList. O download manual respeita o override pelo mesmo motivo do automatico:
+	// a convencao de release nao muda porque o episodio foi pedido a mao.
+	customQuery := ""
+	if s, err := fm.LoadAnimeSettings(animeId); err == nil && s != nil {
+		customQuery = s.SearchQueryOverride
+	}
+
+	results := searchNyaaForSingleEpisode(*targetNode, details.mediaList.Media.Title, nil, anilist.MediaRelations{}, customQuery, anilist.LastAiredEpisode(details.mediaList))
 	var magnets []string
 	for _, result := range results {
 		magnets = append(magnets, result.MagnetLink)

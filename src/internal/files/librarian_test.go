@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -62,8 +61,8 @@ func TestJellyfinName(t *testing.T) {
 		{"Anime: Colon", 1, ".mkv", "Anime Colon - E01.mkv"},
 	}
 	for _, c := range cases {
-		if got := jellyfinName(c.anime, c.ep, c.ext); got != c.want {
-			t.Errorf("jellyfinName(%q,%d,%q) = %q, want %q", c.anime, c.ep, c.ext, got, c.want)
+		if got := standardName(c.anime, c.ep, c.ext); got != c.want {
+			t.Errorf("standardName(%q,%d,%q) = %q, want %q", c.anime, c.ep, c.ext, got, c.want)
 		}
 	}
 }
@@ -94,84 +93,6 @@ func TestSanitizeNameKeepsSeasonMarker(t *testing.T) {
 	}
 }
 
-func TestOrganizeWritesShowNFO(t *testing.T) {
-	tmp := t.TempDir()
-	dataDir := filepath.Join(tmp, "save", "torrentid")
-	completed := filepath.Join(tmp, "completed")
-	writeFile(t, filepath.Join(dataDir, "ep.mkv"), "video-bytes")
-
-	lib := NewLibrarian(NewOSFileSystem())
-	req := OrganizeRequest{
-		TorrentDataDir: dataDir,
-		AnimeName:      "My Anime",
-		AnimeID:        194829,
-		CompletedPath:  completed,
-	}
-	if _, err := lib.Organize(req); err != nil {
-		t.Fatalf("Organize: %v", err)
-	}
-
-	nfo := filepath.Join(completed, "My Anime", "tvshow.nfo")
-	data, err := os.ReadFile(nfo)
-	if err != nil {
-		t.Fatalf("tvshow.nfo missing: %v", err)
-	}
-	if !strings.Contains(string(data), `<uniqueid type="AniList" default="true">194829</uniqueid>`) {
-		t.Errorf("nfo sem uniqueid da anilist:\n%s", data)
-	}
-
-	// Nao sobrescreve um nfo existente (match ajustado a mao pelo usuario).
-	if err := os.WriteFile(nfo, []byte("manual"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := lib.Organize(req); err != nil {
-		t.Fatalf("Organize (2a vez): %v", err)
-	}
-	if data, _ := os.ReadFile(nfo); string(data) != "manual" {
-		t.Errorf("nfo existente foi sobrescrito: %s", data)
-	}
-
-	// Sem AnimeID nao escreve nada.
-	req.AnimeName = "Outro Anime"
-	req.AnimeID = 0
-	if _, err := lib.Organize(req); err != nil {
-		t.Fatalf("Organize (sem id): %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(completed, "Outro Anime", "tvshow.nfo")); err == nil {
-		t.Error("escreveu tvshow.nfo sem AnimeID")
-	}
-}
-
-func TestBackfillShowNFOs(t *testing.T) {
-	tmp := t.TempDir()
-	existing := filepath.Join(tmp, "completed", "My Anime")
-	writeFile(t, filepath.Join(existing, "My Anime - E01.mkv"), "video-bytes")
-	gone := filepath.Join(tmp, "completed", "Deleted Anime")
-
-	lib := NewLibrarian(NewOSFileSystem())
-	lib.BackfillShowNFOs([]EpisodeStruct{
-		{AnimeID: 194829, AnimeName: "My Anime", LibraryPaths: []string{filepath.Join(existing, "My Anime - E01.mkv")}},
-		// Segundo episodio do mesmo anime: nao pode duplicar trabalho nem falhar.
-		{AnimeID: 194829, AnimeName: "My Anime", LibraryPaths: []string{filepath.Join(existing, "My Anime - E02.mkv")}},
-		// Pasta que sumiu do disco.
-		{AnimeID: 111, AnimeName: "Deleted Anime", LibraryPaths: []string{filepath.Join(gone, "ep.mkv")}},
-		// Sem id e sem paths: ignorados.
-		{AnimeID: 0, AnimeName: "No ID", LibraryPaths: []string{filepath.Join(existing, "x.mkv")}},
-		{AnimeID: 222, AnimeName: "Not Organized"},
-	})
-
-	data, err := os.ReadFile(filepath.Join(existing, "tvshow.nfo"))
-	if err != nil {
-		t.Fatalf("tvshow.nfo nao foi criado no backfill: %v", err)
-	}
-	if !strings.Contains(string(data), ">194829<") {
-		t.Errorf("nfo com id errado:\n%s", data)
-	}
-	if _, err := os.Stat(gone); err == nil {
-		t.Error("backfill criou a pasta de um anime que ja nao esta em disco")
-	}
-}
-
 func TestOrganizeSingleEpisodeJellyfin(t *testing.T) {
 	tmp := t.TempDir()
 	dataDir := filepath.Join(tmp, "save", "torrentid")
@@ -185,7 +106,7 @@ func TestOrganizeSingleEpisodeJellyfin(t *testing.T) {
 		AnimeName:      "My Anime",
 		CompletedPath:  completed,
 		EpisodeNumber:  intPtr(5),
-		RenameJellyfin: true,
+		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -196,17 +117,12 @@ func TestOrganizeSingleEpisodeJellyfin(t *testing.T) {
 		t.Fatalf("created = %v, want [%s]", created, wantDest)
 	}
 
-	// Proof of hardlink: same inode as source (not a copy), source still present.
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		t.Fatalf("source missing after organize: %v", err)
+	// Move semantics: the source left the download folder.
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Errorf("source should have been moved out of the download folder")
 	}
-	destInfo, err := os.Stat(wantDest)
-	if err != nil {
+	if _, err := os.Stat(wantDest); err != nil {
 		t.Fatalf("dest missing: %v", err)
-	}
-	if !os.SameFile(srcInfo, destInfo) {
-		t.Errorf("dest is not a hardlink of src (different inode)")
 	}
 }
 
@@ -224,7 +140,7 @@ func TestOrganizeBatchRawNames(t *testing.T) {
 		AnimeName:      "Anime",
 		CompletedPath:  completed,
 		IsBatch:        true,
-		RenameJellyfin: false,
+		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -232,14 +148,15 @@ func TestOrganizeBatchRawNames(t *testing.T) {
 	if len(created) != 2 {
 		t.Fatalf("created = %v, want 2 video links (txt skipped)", created)
 	}
-	for _, name := range []string{"[Sub] Anime - 01 [1080p].mkv", "[Sub] Anime - 02 [1080p].mkv"} {
+	// Rename-always-on: pack files with readable episode numbers get standard names.
+	for _, name := range []string{"Anime - E01.mkv", "Anime - E02.mkv"} {
 		p := filepath.Join(completed, "Anime", name)
 		if _, err := os.Stat(p); err != nil {
-			t.Errorf("expected raw-named link %s: %v", p, err)
+			t.Errorf("expected standard-named file %s: %v", p, err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(completed, "Anime", "readme.txt")); err == nil {
-		t.Errorf("non-video file should not be linked")
+		t.Errorf("non-video file should not be moved")
 	}
 }
 
@@ -261,7 +178,7 @@ func TestOrganizeBatchJellyfinNames(t *testing.T) {
 		AnimeName:      "Anime",
 		CompletedPath:  completed,
 		IsBatch:        true,
-		RenameJellyfin: true,
+		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -297,7 +214,7 @@ func TestOrganizeBatchUnderscoreNames(t *testing.T) {
 		AnimeName:      "Anime",
 		CompletedPath:  completed,
 		IsBatch:        true,
-		RenameJellyfin: true,
+		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -330,13 +247,13 @@ func TestOrganizeBatchAndSingleShareOneFolder(t *testing.T) {
 	lib := NewLibrarian(NewOSFileSystem())
 	if _, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: batchDir, AnimeName: "Anime", CompletedPath: completed,
-		IsBatch: true, RenameJellyfin: true,
+		IsBatch: true,
 	}); err != nil {
 		t.Fatalf("Organize batch: %v", err)
 	}
 	if _, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: singleDir, AnimeName: "Anime", CompletedPath: completed,
-		EpisodeNumber: intPtr(2), RenameJellyfin: true,
+		EpisodeNumber: intPtr(2),
 	}); err != nil {
 		t.Fatalf("Organize single: %v", err)
 	}
@@ -355,7 +272,10 @@ func TestOrganizeBatchAndSingleShareOneFolder(t *testing.T) {
 	}
 }
 
-func TestOrganizeIdempotent(t *testing.T) {
+// With move semantics, a second Organize on the same (now empty) data dir reports "no
+// video files" instead of re-reporting the same path — idempotency at the job level comes
+// from the LibraryPaths marker, not from re-running the move.
+func TestOrganizeSecondRunOnEmptyDataDirErrors(t *testing.T) {
 	tmp := t.TempDir()
 	dataDir := filepath.Join(tmp, "save", "id")
 	completed := filepath.Join(tmp, "completed")
@@ -364,69 +284,56 @@ func TestOrganizeIdempotent(t *testing.T) {
 	lib := NewLibrarian(NewOSFileSystem())
 	req := OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "A", CompletedPath: completed,
-		EpisodeNumber: intPtr(1), RenameJellyfin: true,
+		EpisodeNumber: intPtr(1),
 	}
 	first, err := lib.Organize(req)
 	if err != nil {
 		t.Fatalf("first Organize: %v", err)
 	}
-	second, err := lib.Organize(req)
-	if err != nil {
-		t.Fatalf("second Organize (idempotent): %v", err)
+	if len(first) != 1 {
+		t.Fatalf("first = %v, want 1 path", first)
 	}
-	if len(first) != 1 || len(second) != 1 || first[0] != second[0] {
-		t.Errorf("idempotent mismatch: first=%v second=%v", first, second)
+	second, err := lib.Organize(req)
+	if err == nil {
+		t.Fatalf("second Organize on empty data dir should error, got %v", second)
 	}
 }
 
-// Destination exists and is the very same file (already hardlinked): true no-op, the
-// path is still reported, and the link count does not grow.
-func TestOrganizeSameFileIsNoOp(t *testing.T) {
+// Destination already exists (e.g. a leftover from a previous run): the newly moved file
+// replaces it, and the path is still reported.
+func TestOrganizeDestinationAlreadyExistsIsReplaced(t *testing.T) {
 	tmp := t.TempDir()
 	dataDir := filepath.Join(tmp, "save", "id")
 	completed := filepath.Join(tmp, "completed")
 	src := filepath.Join(dataDir, "ep.mkv")
 	writeFile(t, src, "video-bytes")
 
+	// A stale file already sitting at the destination name.
+	destDir := filepath.Join(completed, "A")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(destDir, "A - E01.mkv")
+	writeFile(t, dest, "stale-bytes")
+
 	lib := NewLibrarian(NewOSFileSystem())
 	req := OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "A", CompletedPath: completed,
-		EpisodeNumber: intPtr(1), RenameJellyfin: true,
+		EpisodeNumber: intPtr(1),
 	}
-	first, err := lib.Organize(req)
+	created, err := lib.Organize(req)
 	if err != nil {
-		t.Fatalf("first Organize: %v", err)
+		t.Fatalf("Organize: %v", err)
 	}
-	dest := filepath.Join(completed, "A", "A - E01.mkv")
-	if len(first) != 1 || first[0] != dest {
-		t.Fatalf("created = %v, want [%s]", first, dest)
+	if len(created) != 1 || created[0] != dest {
+		t.Fatalf("created = %v, want [%s]", created, dest)
 	}
-	before, ok := linkCount(t, src)
-	if ok && before != 2 {
-		t.Fatalf("link count after first Organize = %d, want 2", before)
-	}
-
-	second, err := lib.Organize(req)
+	data, err := os.ReadFile(dest)
 	if err != nil {
-		t.Fatalf("second Organize: %v", err)
+		t.Fatalf("read dest: %v", err)
 	}
-	if len(second) != 1 || second[0] != dest {
-		t.Fatalf("second created = %v, want [%s]", second, dest)
-	}
-	if after, ok2 := linkCount(t, src); ok && ok2 && after != before {
-		t.Errorf("link count changed on no-op: %d -> %d", before, after)
-	}
-
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		t.Fatalf("source missing: %v", err)
-	}
-	destInfo, err := os.Stat(dest)
-	if err != nil {
-		t.Fatalf("dest missing: %v", err)
-	}
-	if !os.SameFile(srcInfo, destInfo) {
-		t.Errorf("dest should still be the same file as src")
+	if string(data) != "video-bytes" {
+		t.Errorf("dest content = %q, want the newly moved bytes", data)
 	}
 }
 
@@ -442,20 +349,11 @@ func TestOrganizeReplacesDifferentFileAtDestination(t *testing.T) {
 	// A stale, unrelated file already sitting at the destination name.
 	dest := filepath.Join(completed, "A", "A - E01.mkv")
 	writeFile(t, dest, "stale-bytes")
-	// Keep a second name for the stale file so its identity outlives the replacement.
-	// On Windows os.Stat records only the path and os.SameFile resolves the file id
-	// lazily by reopening it, so a FileInfo taken from dest before the swap would
-	// compare equal to whatever sits at dest afterwards. Statting the alias instead
-	// pins the original file on every platform.
-	staleAlias := filepath.Join(tmp, "stale-alias.mkv")
-	if err := os.Link(dest, staleAlias); err != nil {
-		t.Fatalf("link stale alias: %v", err)
-	}
 
 	lib := NewLibrarian(NewOSFileSystem())
 	created, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "A", CompletedPath: completed,
-		EpisodeNumber: intPtr(1), RenameJellyfin: true,
+		EpisodeNumber: intPtr(1),
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -464,24 +362,7 @@ func TestOrganizeReplacesDifferentFileAtDestination(t *testing.T) {
 		t.Fatalf("created = %v, want [%s]", created, dest)
 	}
 
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		t.Fatalf("source missing after replacement: %v", err)
-	}
-	destInfo, err := os.Stat(dest)
-	if err != nil {
-		t.Fatalf("dest missing after replacement: %v", err)
-	}
-	if !os.SameFile(srcInfo, destInfo) {
-		t.Errorf("dest was not relinked to src")
-	}
-	staleInfo, err := os.Stat(staleAlias)
-	if err != nil {
-		t.Fatalf("stale alias missing after replacement: %v", err)
-	}
-	if os.SameFile(staleInfo, destInfo) {
-		t.Errorf("dest still points at the stale file")
-	}
+	// The new file won and the source left the download folder.
 	content, err := os.ReadFile(dest)
 	if err != nil {
 		t.Fatalf("read dest: %v", err)
@@ -489,13 +370,10 @@ func TestOrganizeReplacesDifferentFileAtDestination(t *testing.T) {
 	if string(content) != "new-bytes" {
 		t.Errorf("dest content = %q, want %q", content, "new-bytes")
 	}
-	// The seeded file must survive with exactly one extra name (seeding not broken).
-	if n, ok := linkCount(t, src); ok && n != 2 {
-		t.Errorf("source link count = %d, want 2", n)
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Errorf("source should have been moved out of the download folder")
 	}
 }
-
-// An empty CompletedPath must fail loudly instead of hardlinking into the process CWD.
 func TestOrganizeEmptyCompletedPath(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "save", "id")
 	writeFile(t, filepath.Join(dataDir, "ep.mkv"), "x")
@@ -506,7 +384,7 @@ func TestOrganizeEmptyCompletedPath(t *testing.T) {
 	lib := NewLibrarian(NewOSFileSystem())
 	created, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "My Anime", CompletedPath: "",
-		EpisodeNumber: intPtr(1), RenameJellyfin: true,
+		EpisodeNumber: intPtr(1),
 	})
 	if err == nil {
 		t.Fatalf("expected error for empty completed path, created = %v", created)
@@ -530,7 +408,7 @@ func TestOrganizeEpisodeNumberZeroKeepsRawName(t *testing.T) {
 	lib := NewLibrarian(NewOSFileSystem())
 	created, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "A", CompletedPath: completed,
-		EpisodeNumber: intPtr(0), RenameJellyfin: true,
+		EpisodeNumber: intPtr(0),
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -553,7 +431,7 @@ func TestOrganizeNoVideoFiles(t *testing.T) {
 	lib := NewLibrarian(NewOSFileSystem())
 	_, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "A", CompletedPath: completed,
-		EpisodeNumber: intPtr(1), RenameJellyfin: true,
+		EpisodeNumber: intPtr(1),
 	})
 	if err == nil {
 		t.Fatalf("expected error when no video files present")
@@ -583,34 +461,35 @@ func TestRemoveFromLibrary(t *testing.T) {
 }
 
 func TestProbePath(t *testing.T) {
-	t.Run("cria biblioteca, diretorio de download e .ignore", func(t *testing.T) {
+	t.Run("cria biblioteca e diretorio de download", func(t *testing.T) {
 		completed := filepath.Join(t.TempDir(), "library")
+		download := filepath.Join(t.TempDir(), "downloads")
 		lib := NewLibrarian(NewOSFileSystem())
 
-		if err := lib.ProbePath(completed); err != nil {
+		if err := lib.ProbePath(completed, download); err != nil {
 			t.Fatalf("ProbePath: %v", err)
 		}
 
-		downloadDir := filepath.Join(completed, ".torrents")
-		if _, err := os.Stat(downloadDir); err != nil {
+		if _, err := os.Stat(download); err != nil {
 			t.Errorf("diretorio de download nao foi criado: %v", err)
 		}
-		if _, err := os.Stat(filepath.Join(downloadDir, ".ignore")); err != nil {
-			t.Errorf(".ignore nao foi criado: %v", err)
+		if _, err := os.Stat(completed); err != nil {
+			t.Errorf("diretorio da biblioteca nao foi criado: %v", err)
 		}
 	})
 
 	t.Run("nao deixa arquivos de sonda para tras", func(t *testing.T) {
 		completed := filepath.Join(t.TempDir(), "library")
+		download := filepath.Join(t.TempDir(), "downloads")
 		lib := NewLibrarian(NewOSFileSystem())
 
-		if err := lib.ProbePath(completed); err != nil {
+		if err := lib.ProbePath(completed, download); err != nil {
 			t.Fatalf("ProbePath: %v", err)
 		}
 
 		for _, p := range []string{
-			filepath.Join(completed, ".aad_link_probe"),
-			filepath.Join(completed, ".torrents", ".aad_link_probe"),
+			filepath.Join(completed, ".aad_move_probe"),
+			filepath.Join(download, ".aad_move_probe"),
 		} {
 			if _, err := os.Stat(p); err == nil {
 				t.Errorf("sobrou arquivo de sonda em %s", p)
@@ -618,30 +497,31 @@ func TestProbePath(t *testing.T) {
 		}
 	})
 
-	t.Run("rejeita biblioteca vazia", func(t *testing.T) {
+	t.Run("rejeita caminhos vazios", func(t *testing.T) {
 		lib := NewLibrarian(NewOSFileSystem())
-		if err := lib.ProbePath(""); err == nil {
-			t.Error("quero erro para caminho vazio, veio nil")
+		if err := lib.ProbePath("", filepath.Join(t.TempDir(), "dl")); err == nil {
+			t.Error("quero erro para biblioteca vazia, veio nil")
+		}
+		if err := lib.ProbePath(filepath.Join(t.TempDir(), "lib"), ""); err == nil {
+			t.Error("quero erro para download vazio, veio nil")
 		}
 	})
 
 	t.Run("e idempotente", func(t *testing.T) {
 		completed := filepath.Join(t.TempDir(), "library")
+		download := filepath.Join(t.TempDir(), "downloads")
 		lib := NewLibrarian(NewOSFileSystem())
 
-		if err := lib.ProbePath(completed); err != nil {
+		if err := lib.ProbePath(completed, download); err != nil {
 			t.Fatalf("primeira chamada: %v", err)
 		}
-		if err := lib.ProbePath(completed); err != nil {
+		if err := lib.ProbePath(completed, download); err != nil {
 			t.Fatalf("segunda chamada: %v", err)
 		}
 	})
 }
 
-// Pack multi-season: collectVideoFiles achata as subpastas, entao dois arquivos com o MESMO
-// basename apontariam para o mesmo destino e o segundo removeria o link do primeiro — um
-// episodio sumia da biblioteca. O caminho relativo desempata.
-func TestOrganizeBatchSameBasenameInSubfoldersKeepsBothLinks(t *testing.T) {
+func TestOrganizeBatchSameBasenameInSubfoldersKeepsBothFiles(t *testing.T) {
 	tmp := t.TempDir()
 	dataDir := filepath.Join(tmp, "save", "batchid")
 	completed := filepath.Join(tmp, "completed")
@@ -659,18 +539,21 @@ func TestOrganizeBatchSameBasenameInSubfoldersKeepsBothLinks(t *testing.T) {
 		t.Fatalf("Organize: %v", err)
 	}
 	if len(created) != 2 {
-		t.Fatalf("created = %v, want 2 links", created)
+		t.Fatalf("created = %v, want 2 files", created)
 	}
 	if created[0] == created[1] {
 		t.Fatalf("both files landed on the same library path: %v", created)
 	}
+	// Rename-always-on: the first file takes the standard name; the second (same episode
+	// number after the rename) collides and keeps its raw name, disambiguated by the
+	// relative path.
 	for path, want := range map[string]string{
-		filepath.Join(completed, "Anime", "[Sub] Anime - 01 [1080p].mkv"):            "s1e1",
-		filepath.Join(completed, "Anime", "Season 2 - [Sub] Anime - 01 [1080p].mkv"): "s2e1",
+		filepath.Join(completed, "Anime", "Anime - E01.mkv"):                        "s1e1",
+		filepath.Join(completed, "Anime", "[Sub] Anime - 01 [1080p].mkv"):          "s2e1",
 	} {
 		got, err := os.ReadFile(path)
 		if err != nil {
-			t.Errorf("expected link %s: %v", path, err)
+			t.Errorf("expected file %s: %v", path, err)
 			continue
 		}
 		if string(got) != want {
@@ -678,9 +561,6 @@ func TestOrganizeBatchSameBasenameInSubfoldersKeepsBothLinks(t *testing.T) {
 		}
 	}
 }
-
-// Pack de season >= 2 com numeracao continua (arquivos 13-24 para uma entrada de 12 episodios):
-// o numero do arquivo e absoluto, o da ENTRADA da AniList comeca em 1.
 func TestOrganizeBatchContinuousNumberingMapsToEntryNumbers(t *testing.T) {
 	tmp := t.TempDir()
 	dataDir := filepath.Join(tmp, "save", "batchid")
@@ -695,7 +575,7 @@ func TestOrganizeBatchContinuousNumberingMapsToEntryNumbers(t *testing.T) {
 		CompletedPath:  completed,
 		TotalEpisodes:  2,
 		IsBatch:        true,
-		RenameJellyfin: true,
+		
 	}); err != nil {
 		t.Fatalf("Organize: %v", err)
 	}
@@ -723,7 +603,7 @@ func TestOrganizeBatchExtraAboveTotalDoesNotShift(t *testing.T) {
 		CompletedPath:  completed,
 		TotalEpisodes:  2,
 		IsBatch:        true,
-		RenameJellyfin: true,
+		
 	}); err != nil {
 		t.Fatalf("Organize: %v", err)
 	}
@@ -750,7 +630,7 @@ func TestOrganizeBatchIncompletePackDoesNotShift(t *testing.T) {
 		CompletedPath:  completed,
 		TotalEpisodes:  12,
 		IsBatch:        true,
-		RenameJellyfin: true,
+		
 	}); err != nil {
 		t.Fatalf("Organize: %v", err)
 	}

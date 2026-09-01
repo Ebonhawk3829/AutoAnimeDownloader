@@ -180,7 +180,6 @@ export interface Config {
   watched_episodes_to_keep: number
   excluded_list?: string
   excluded_lists: string[]
-  rename_files_for_jellyfin: boolean
   download_statuses: string[]
   download_media_statuses: string[]
   delete_statuses: string[]
@@ -360,6 +359,11 @@ export interface AnimeDetailResponse {
 export interface AnimeSettings {
   /** Progresso manual — só é lido para anime avulso (o de lista vem da AniList). */
   progress?: number
+  /**
+   * Substitui as variantes de título derivadas do AniList nas buscas do Nyaa.
+   * Vazio/ausente = comportamento padrão. Não afeta a numeração de episódios.
+   */
+  search_query_override?: string
 }
 
 export async function getAnimeDetail(animeId: number): Promise<AnimeDetailResponse> {
@@ -388,6 +392,10 @@ export async function replaceEpisodeWithMagnet(animeId: number, episodeNumber: n
 
 export async function replaceAnimeWithMagnet(animeId: number, magnet: string): Promise<void> {
   return apiRequest<void>('POST', `/animes/${animeId}/replace`, { magnet })
+}
+
+export async function getAnimeSettings(animeId: number): Promise<AnimeSettings> {
+  return apiRequest<AnimeSettings>('GET', `/animes/${animeId}/settings`)
 }
 
 export async function updateAnimeSettings(animeId: number, settings: AnimeSettings): Promise<void> {

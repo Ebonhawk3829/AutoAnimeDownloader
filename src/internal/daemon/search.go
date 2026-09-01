@@ -21,9 +21,9 @@ type dropStats struct {
 type nyaaSearchFunc func(title string) ([]nyaa.TorrentResult, error)
 
 type nyaaSearcher struct {
-	searchAnime         func(titles anilist.Title, synonyms []string, episodes []int) []nyaa.TorrentResult
-	searchSingleEpisode func(ep anilist.AiringNode, titles anilist.Title, synonyms []string, relations anilist.MediaRelations, totalEpisodes int) []nyaa.TorrentResult
-	searchMovie         func(titles anilist.Title, isFormatMovie bool) []nyaa.TorrentResult
+	searchAnime         func(titles anilist.Title, synonyms []string, episodes []int, customQuery string) []nyaa.TorrentResult
+	searchSingleEpisode func(ep anilist.AiringNode, titles anilist.Title, synonyms []string, relations anilist.MediaRelations, customQuery string, totalEpisodes int) []nyaa.TorrentResult
+	searchMovie         func(titles anilist.Title, isFormatMovie bool, customQuery string) []nyaa.TorrentResult
 	// packRange le a faixa REAL de um pack na pagina de detalhe do Nyaa. Separado das buscas
 	// porque nao e busca: roda depois do filtro e da ordenacao, so para o pack que o nome nao
 	// resolve, e so para os poucos que a escolha de fato considera (ver packSet).
@@ -104,7 +104,16 @@ func filterSearchResults(results []nyaa.TorrentResult, maxGB float64, minSeeders
 	return final, dropStats{Input: len(results), BySize: sizeDropped, BySeeders: seedersDropped}
 }
 
-func buildTitleVariants(titles anilist.Title) []string {
+func buildTitleVariants(titles anilist.Title, customQuery string) []string {
+	// Override por anime: substitui TODAS as variantes derivadas do AniList. E a intervencao
+	// manual para quando a convencao de release diverge do titulo oficial (ex.: o nome que os
+	// fansubs usam nao e nenhuma variante do romaji/english). Sem fallback de proposito: se o
+	// override nao acha nada, o usuario precisa ve-lo falhando para corrigi-lo — cair
+	// silenciosamente para o titulo oficial esconderia um override errado atras de resultados
+	// que nao sao os pedidos.
+	if customQuery != "" {
+		return []string{customQuery}
+	}
 	var romaji, english string
 	if titles.Romaji != nil {
 		romaji = *titles.Romaji
@@ -115,8 +124,8 @@ func buildTitleVariants(titles anilist.Title) []string {
 	return nyaa.GenerateSearchTitleVariants(romaji, english)
 }
 
-func searchNyaaWithVariants(titles anilist.Title, searchFn nyaaSearchFunc, logLabel string) []nyaa.TorrentResult {
-	variants := buildTitleVariants(titles)
+func searchNyaaWithVariants(titles anilist.Title, customQuery string, searchFn nyaaSearchFunc, logLabel string) []nyaa.TorrentResult {
+	variants := buildTitleVariants(titles, customQuery)
 
 	for i, variant := range variants {
 		logger.Logger.Debug().
@@ -148,10 +157,10 @@ func searchNyaaWithVariants(titles anilist.Title, searchFn nyaaSearchFunc, logLa
 }
 
 // totalEpisodes vai para o nyaa apenas para decidir o zero-padding da query (0 = desconhecido).
-func searchNyaaForSingleEpisode(ep anilist.AiringNode, titles anilist.Title, synonyms []string, relations anilist.MediaRelations, totalEpisodes int) []nyaa.TorrentResult {
+func searchNyaaForSingleEpisode(ep anilist.AiringNode, titles anilist.Title, synonyms []string, relations anilist.MediaRelations, customQuery string, totalEpisodes int) []nyaa.TorrentResult {
 	season, part := ExtractAnimeSeasonPart(titles, synonyms)
 
-	results := searchNyaaWithVariants(titles, func(title string) ([]nyaa.TorrentResult, error) {
+	results := searchNyaaWithVariants(titles, customQuery, func(title string) ([]nyaa.TorrentResult, error) {
 		return nyaa.ScrapNyaa(title, ep.Episode, season, part, totalEpisodes)
 	}, "single episode")
 
@@ -162,7 +171,7 @@ func searchNyaaForSingleEpisode(ep anilist.AiringNode, titles anilist.Title, syn
 	// Fallback com offset: converte progresso relativo em número absoluto para fansubs
 	// com numeração contínua. Só aplica quando part >= 2 (gate obrigatório).
 	if offset := ComputeEpisodeOffset(relations, part); offset > 0 {
-		results = searchNyaaWithVariants(titles, func(title string) ([]nyaa.TorrentResult, error) {
+		results = searchNyaaWithVariants(titles, customQuery, func(title string) ([]nyaa.TorrentResult, error) {
 			return nyaa.ScrapNyaa(title, ep.Episode+offset, season, nil, totalEpisodes)
 		}, "single episode (offset fallback)")
 	}
@@ -170,17 +179,17 @@ func searchNyaaForSingleEpisode(ep anilist.AiringNode, titles anilist.Title, syn
 	return results
 }
 
-func searchNyaaForMovie(titles anilist.Title, isFormatMovie bool) []nyaa.TorrentResult {
-	return searchNyaaWithVariants(titles, func(title string) ([]nyaa.TorrentResult, error) {
+func searchNyaaForMovie(titles anilist.Title, isFormatMovie bool, customQuery string) []nyaa.TorrentResult {
+	return searchNyaaWithVariants(titles, customQuery, func(title string) ([]nyaa.TorrentResult, error) {
 		return nyaa.ScrapNyaaForMovie(title, isFormatMovie)
 	}, "movie")
 }
 
 // searchNyaaForAnime e a busca unica por anime: devolve packs e episodios na mesma lista (ver
 // nyaa.ScrapNyaaForAnime).
-func searchNyaaForAnime(titles anilist.Title, synonyms []string, episodes []int) []nyaa.TorrentResult {
+func searchNyaaForAnime(titles anilist.Title, synonyms []string, episodes []int, customQuery string) []nyaa.TorrentResult {
 	season, part := ExtractAnimeSeasonPart(titles, synonyms)
-	return searchNyaaWithVariants(titles, func(title string) ([]nyaa.TorrentResult, error) {
+	return searchNyaaWithVariants(titles, customQuery, func(title string) ([]nyaa.TorrentResult, error) {
 		return nyaa.ScrapNyaaForAnime(title, episodes, season, part)
 	}, "anime")
 }

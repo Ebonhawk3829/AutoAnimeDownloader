@@ -22,9 +22,9 @@ func TestIsCrossDeviceUnix(t *testing.T) {
 	}
 }
 
-// exdevLink is a link func that always reports a cross-device error.
-func exdevLink(oldname, newname string) error {
-	return &os.LinkError{Op: "link", Old: oldname, New: newname, Err: syscall.EXDEV}
+// exdevMove is a move func that always reports a cross-device error.
+func exdevMove(oldname, newname string) error {
+	return &os.LinkError{Op: "rename", Old: oldname, New: newname, Err: syscall.EXDEV}
 }
 
 func TestOrganizeCrossDeviceCleansUp(t *testing.T) {
@@ -33,10 +33,10 @@ func TestOrganizeCrossDeviceCleansUp(t *testing.T) {
 	completed := filepath.Join(tmp, "completed")
 	writeFile(t, filepath.Join(dataDir, "ep.mkv"), "x")
 
-	lib := &organizer{fs: NewOSFileSystem(), link: exdevLink}
+	lib := &organizer{fs: NewOSFileSystem(), move: exdevMove}
 	_, err := lib.Organize(OrganizeRequest{
 		TorrentDataDir: dataDir, AnimeName: "A", CompletedPath: completed,
-		EpisodeNumber: intPtr(1), RenameJellyfin: true,
+		EpisodeNumber: intPtr(1),
 	})
 	if err == nil {
 		t.Fatalf("expected cross-device error")
@@ -50,17 +50,17 @@ func TestOrganizeCrossDeviceCleansUp(t *testing.T) {
 	}
 }
 
-func TestProbePathFailsWhenLinkUnsupported(t *testing.T) {
+func TestProbePathFailsWhenMoveUnsupported(t *testing.T) {
 	tmp := t.TempDir()
 	completed := filepath.Join(tmp, "completed")
+	download := filepath.Join(tmp, "downloads")
 
-	lib := &organizer{fs: NewOSFileSystem(), link: exdevLink}
-	if err := lib.ProbePath(completed); err == nil {
-		t.Fatalf("expected error from ProbePath when the link func fails")
+	lib := &organizer{fs: NewOSFileSystem(), move: exdevMove}
+	if err := lib.ProbePath(completed, download); err == nil {
+		t.Fatalf("expected error from ProbePath when the move func fails")
 	}
 	// Probe source cleaned up despite the failure.
-	downloadDir := filepath.Join(completed, downloadDirName)
-	if _, statErr := os.Stat(filepath.Join(downloadDir, ".aad_link_probe")); statErr == nil {
+	if _, statErr := os.Stat(filepath.Join(download, ".aad_move_probe")); statErr == nil {
 		t.Errorf("probe source not cleaned up after failure")
 	}
 }

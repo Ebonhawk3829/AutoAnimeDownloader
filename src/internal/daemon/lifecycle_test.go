@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -197,14 +198,14 @@ func TestHandleTorrentFailure_NoWebhookStillRemoves(t *testing.T) {
 	}
 }
 
-// exdevFS is an OSFileSystem whose Link always fails with EXDEV, simulating a filesystem
-// that does not support hardlinks (exFAT, FAT32, some SMB/NFS mounts).
+// exdevFS is an OSFileSystem whose Rename always fails with EXDEV, simulating download
+// folder and library on different filesystems (the move would fail).
 type exdevFS struct {
 	*files.OSFileSystem
 }
 
-func (exdevFS) Link(oldname, newname string) error {
-	return &os.LinkError{Op: "link", Old: oldname, New: newname, Err: syscall.EXDEV}
+func (exdevFS) Rename(oldname, newname string) error {
+	return &os.LinkError{Op: "rename", Old: oldname, New: newname, Err: syscall.EXDEV}
 }
 
 // mockEmptyAniList makes searchAnilist succeed with an empty media list, so a pass that gets
@@ -221,15 +222,17 @@ func mockEmptyAniList(t *testing.T) {
 	t.Cleanup(restore)
 }
 
-// P3.3 — a completed path whose filesystem does not support hardlinks must abort the pass
+// P3.3 — download folder and library on different filesystems must abort the pass
 // with an actionable LastCheckError instead of downloading episodes that can never be
-// hardlinked.
+// moved into the library.
 func TestAnimeVerification_NoHardlinkSupportAbortsPass(t *testing.T) {
 	mockEmptyAniList(t)
 
+	base := t.TempDir()
 	fm := &lifecycleFM{configs: &files.Config{
 		AnilistUsernames:   []string{"tester"},
-		CompletedAnimePath: t.TempDir(),
+		CompletedAnimePath: filepath.Join(base, "library"),
+		TorrentDir:         filepath.Join(base, "other-disk", "downloads"),
 		CheckInterval:      10,
 	}}
 	state := NewState()
@@ -239,13 +242,13 @@ func TestAnimeVerification_NoHardlinkSupportAbortsPass(t *testing.T) {
 
 	err := state.GetLastCheckError()
 	if err == nil {
-		t.Fatal("expected LastCheckError to be set when the filesystem does not support hardlinks")
+		t.Fatal("expected LastCheckError to be set when the paths are on different filesystems")
 	}
-	if !strings.Contains(err.Error(), "does not support hardlinks") {
+	if !strings.Contains(err.Error(), "same filesystem") {
 		t.Errorf("LastCheckError should carry the same message the config endpoint returns, got %q", err)
 	}
 	if fm.passRan() {
-		t.Error("verification must abort before running the pass when the hardlink probe fails")
+		t.Error("verification must abort before running the pass when the move probe fails")
 	}
 }
 
@@ -271,7 +274,7 @@ func TestAnimeVerification_ValidPathsRunPass(t *testing.T) {
 		t.Error("verification should have run the pass with valid paths")
 	}
 	// The probe must not leave its scratch files behind in the library.
-	if _, err := os.Stat(fm.configs.CompletedAnimePath + "/.aad_link_probe"); err == nil {
+	if _, err := os.Stat(fm.configs.CompletedAnimePath + "/.aad_move_probe"); err == nil {
 		t.Error("probe file leaked into the completed anime path")
 	}
 }

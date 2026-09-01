@@ -20,6 +20,7 @@
     replaceEpisodeWithMagnet,
     replaceAnimeWithMagnet,
     updateAnimeSettings,
+    getAnimeSettings,
     removeStandaloneAnime,
     deleteTorrent,
     getLastCheck,
@@ -102,6 +103,36 @@
   let progressInput = 0;
   let progressSaving = false;
   $: progressInput = anime?.episodes_watched ?? 0;
+
+  // Override de busca por anime. Carregado junto do detalhe (o GET de settings devolve o que
+  // está salvo); recolhido por padrão porque é ajuste fino, não o que se vem fazer nesta tela.
+  let searchOverride = "";
+  let searchOverrideOpen = false;
+  let searchOverrideSaving = false;
+  let searchOverrideLoaded = false;
+
+  async function loadSearchOverride() {
+    try {
+      const s = await getAnimeSettings(animeId);
+      searchOverride = s?.search_query_override ?? "";
+      searchOverrideLoaded = true;
+    } catch {
+      // Falha degrada silencioso: o campo abre vazio e salvar por cima recria o override.
+      searchOverrideLoaded = true;
+    }
+  }
+
+  async function saveSearchOverride() {
+    searchOverrideSaving = true;
+    try {
+      await updateAnimeSettings(animeId, { search_query_override: searchOverride.trim() });
+      toast.success("Search title saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save search title");
+    } finally {
+      searchOverrideSaving = false;
+    }
+  }
 
   async function saveProgress(value: number) {
     progressSaving = true;
@@ -921,6 +952,33 @@
             <p class="mt-1 text-caption text-subtle">{$locale && m.detail_progress_hint()}</p>
           {/if}
         {/if}
+
+        <!-- Override de busca: para quando a convenção de release diverge do título AniList
+             (numeração continuada entre cours, título de fansub diferente). Disponível para
+             anime de lista E avulso — os dois sofrem do mesmo problema. -->
+        {#if searchOverrideOpen}
+          {#if !searchOverrideLoaded}
+            {loadSearchOverride()}
+          {/if}
+          <div class="mt-3 rounded-field border border-default bg-control/40 p-3">
+            <label for="search-override" class="text-copy text-body">
+              {$locale && m.detail_search_override_label()}
+            </label>
+            <div class="mt-1.5 flex flex-wrap items-center gap-2">
+              <input
+                id="search-override"
+                type="text"
+                bind:value={searchOverride}
+                class="min-w-0 flex-1 rounded-field border border-default bg-control px-2 py-1 text-copy text-heading outline-none focus:border-accent"
+                on:keydown={(e) => { if (e.key === 'Enter') saveSearchOverride(); }}
+              />
+              <Button variant="ghost" disabled={searchOverrideSaving} on:click={() => saveSearchOverride()}>
+                {searchOverrideSaving ? "..." : ($locale && m.common_save())}
+              </Button>
+            </div>
+            <p class="mt-1 text-caption text-subtle">{$locale && m.detail_search_override_hint()}</p>
+          </div>
+        {/if}
       </div>
 
       <div class="flex flex-wrap gap-2">
@@ -929,6 +987,9 @@
             {$locale && m.detail_untrack_btn()}
           </Button>
         {/if}
+        <Button variant="ghost" on:click={() => { searchOverrideOpen = !searchOverrideOpen; }}>
+          {searchOverrideOpen ? ($locale && m.common_cancel()) : ($locale && m.detail_search_override_label())}
+        </Button>
         <Button variant="ghost" on:click={() => { replaceAnimeMagnet = ""; replaceAnimeOpen = true; }}>
           {$locale && m.detail_replace_btn_anime()}
         </Button>

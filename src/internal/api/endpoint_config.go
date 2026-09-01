@@ -54,10 +54,11 @@ func handleUpdateConfig(server *Server) http.HandlerFunc {
 			return
 		}
 
-		// A biblioteca e montada com hardlinks; nem todo filesystem suporta. Verifica no
-		// momento do save, com a mesma funcao que o runtime usa.
+		// A biblioteca e montada com moves a partir da pasta de download; o par de pastas
+		// precisa compartilhar filesystem. Verifica no momento do save, com a mesma funcao
+		// que o runtime usa.
 		if server.Librarian != nil {
-			if err := server.Librarian.ProbePath(config.CompletedAnimePath); err != nil {
+			if err := server.Librarian.ProbePath(config.CompletedAnimePath, config.DownloadPath()); err != nil {
 				JSONError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 				return
 			}

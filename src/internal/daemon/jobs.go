@@ -16,7 +16,7 @@ import (
 type JobType string
 
 const (
-	// JobOrganize hardlinks a completed torrent's files into the library and fires the
+	// JobOrganize moves a completed torrent's files into the library and fires the
 	// completion webhook. It is idempotent and replaces the former poll-based
 	// rename/move/notify jobs.
 	JobOrganize JobType = "organize"
@@ -305,7 +305,7 @@ func (q *JobQueue) loadFromDisk() {
 	logger.Logger.Info().Int("count", len(jobs)).Msg("Job queue: loaded pending jobs from disk")
 }
 
-// organizeTorrent hardlinks a completed torrent's files into the library and, exactly once,
+// organizeTorrent moves a completed torrent's files into the library and, exactly once,
 // writes back the created LibraryPaths and fires the completion webhook. Idempotent across
 // restarts: episodes whose LibraryPaths are already set are treated as done (no webhook,
 // no re-link). Shared by JobOrganize and directly testable.
@@ -359,10 +359,8 @@ func organizeTorrent(hash string, backend torrents.TorrentBackend, librarian fil
 	req := files.OrganizeRequest{
 		TorrentDataDir: info.DataDir,
 		AnimeName:      matched[0].AnimeName,
-		AnimeID:        matched[0].AnimeID,
 		CompletedPath:  configs.CompletedAnimePath,
 		IsBatch:        isBatch,
-		RenameJellyfin: configs.RenameFilesForJellyfin,
 		TotalEpisodes:  matched[0].AnimeTotalEpisodes,
 	}
 	if !isBatch {
@@ -372,7 +370,7 @@ func organizeTorrent(hash string, backend torrents.TorrentBackend, librarian fil
 
 	created, err := librarian.Organize(req)
 	if err != nil {
-		logger.Logger.Warn().Err(err).Str("hash", hash).Str("anime", matched[0].AnimeName).Msg("Organize: failed to hardlink into library")
+		logger.Logger.Warn().Err(err).Str("hash", hash).Str("anime", matched[0].AnimeName).Msg("Organize: failed to move into library")
 		return false // retry with backoff; permanent errors drop after MaxRetries
 	}
 
@@ -383,7 +381,18 @@ func organizeTorrent(hash string, backend torrents.TorrentBackend, librarian fil
 	}
 	if err := fm.UpsertEpisodes(matched); err != nil {
 		logger.Logger.Warn().Err(err).Str("hash", hash).Msg("Organize: failed to persist library paths")
-		return false // retry; hardlinks already exist so Organize will no-op next time
+		return false // retry; files already moved so Organize will no-op next time
+	}
+
+	// Move mode: the files left the download folder, so the torrent has nothing to seed.
+	// Remove it from the client (records stay; the watched-delete flow handles the library
+	// files). Failure is not fatal: the verification pass reconciles orphans later.
+	if configs.MoveOnComplete() {
+		if err := backend.Remove(hash, false); err != nil {
+			logger.Logger.Warn().Err(err).Str("hash", hash).Msg("Organize: failed to remove torrent after move; will retry on next pass")
+		} else {
+			logger.Logger.Info().Str("hash", hash).Msg("Removed torrent after moving files into the library")
+		}
 	}
 
 	// Se PARTE do grupo ja tinha LibraryPaths, o torrent ja pousou e o webhook ja saiu: organiza

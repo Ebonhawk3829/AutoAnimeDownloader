@@ -6,12 +6,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 )
 
-// Progress e PONTEIRO porque o PUT e parcial: ausente tem de ser distinguivel de zero, ou um
-// corpo sem o campo zeraria o progresso salvo.
+// ptr devolve um ponteiro para s. Auxiliar local para normalizacao do override.
+func ptr(s string) *string { return &s }
+
+// Progress e SearchQueryOverride sao PONTEIROS porque o PUT e parcial: ausente tem de ser
+// distinguivel de zero/vazio, ou um corpo sem os campos zeraria o que ja esta salvo.
 type animeSettingsRequest struct {
-	Progress *int `json:"progress"`
+	Progress            *int    `json:"progress"`
+	SearchQueryOverride *string `json:"search_query_override"`
 }
 
 func handleAnimeSettings(server *Server) http.HandlerFunc {
@@ -43,6 +48,16 @@ func handleAnimeSettings(server *Server) http.HandlerFunc {
 				JSONError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Progress must be non-negative")
 				return
 			}
+			if req.SearchQueryOverride != nil && strings.TrimSpace(*req.SearchQueryOverride) == "" {
+				// Normaliza branco para vazio: limpar o campo no UI tem de remover o override,
+				// nao salvar uma string de espacos que quebraria a busca.
+				req.SearchQueryOverride = ptr("")
+			}
+			if req.SearchQueryOverride != nil && strings.TrimSpace(*req.SearchQueryOverride) == "" {
+				// Normaliza branco para vazio: limpar o campo no UI tem de remover o override,
+				// nao salvar uma string de espacos que quebraria a busca.
+				req.SearchQueryOverride = ptr("")
+			}
 
 			existing, err := server.FileManager.LoadAnimeSettings(id)
 			if err != nil {
@@ -57,6 +72,12 @@ func handleAnimeSettings(server *Server) http.HandlerFunc {
 			}
 			if req.Progress != nil {
 				settings.Progress = *req.Progress
+			}
+			if req.SearchQueryOverride != nil {
+				settings.SearchQueryOverride = strings.TrimSpace(*req.SearchQueryOverride)
+			}
+			if req.SearchQueryOverride != nil {
+				settings.SearchQueryOverride = strings.TrimSpace(*req.SearchQueryOverride)
 			}
 
 			if err := server.FileManager.SaveAnimeSettings(id, settings); err != nil {

@@ -144,7 +144,14 @@ func DownloadStandaloneAnime(fm FileManagerInterface, backend torrents.TorrentBa
 	// (baixada sob o cour anterior) nao deve rebaixar nada (coverage.go).
 	seriesIndex := resolveSeriesIndex([]int{mediaID}, savedEpisodes)
 
-	result := processAnimeEpisodes(configs, backend, *anime, backend.List(), savedEpisodes, seriesIndex, blockedMap, defaultNyaaSearcher())
+	// Override de busca por anime (AnimeSettings.SearchQueryOverride). Vazio = variantes
+	// padrao do AniList.
+	customQuery := ""
+	if s, err := fm.LoadAnimeSettings(mediaID); err == nil && s != nil {
+		customQuery = s.SearchQueryOverride
+	}
+
+	result := processAnimeEpisodes(configs, backend, *anime, backend.List(), savedEpisodes, seriesIndex, blockedMap, defaultNyaaSearcher(), customQuery)
 
 	saveEpisodesToFile(fm, result.newEpisodes)
 

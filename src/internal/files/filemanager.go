@@ -83,9 +83,14 @@ type NotificationsConfig struct {
 
 type Config struct {
 	CompletedAnimePath string   `json:"completed_anime_path"`
-	AnilistUsername    string   `json:"anilist_username,omitempty"`
-	AnilistUsernames   []string `json:"anilist_usernames"`
-	CheckInterval      int      `json:"check_interval"`
+	// TorrentDir e onde os torrents baixam e ficam ate a conclusao. Opcional: vazio deriva
+	// <completed_anime_path>/.torrents (comportamento legado). Quando definido, os arquivos
+	// sao MOVIDOS para a biblioteca ao concluir (sem hardlink, sem seeding pos-conclusao),
+	// entao nao precisa compartilhar filesystem com a biblioteca.
+	TorrentDir       string   `json:"torrent_dir,omitempty"`
+	AnilistUsername  string   `json:"anilist_username,omitempty"`
+	AnilistUsernames []string `json:"anilist_usernames"`
+	CheckInterval    int      `json:"check_interval"`
 	// MaxEpisodesPerAnime limita quantos episodios de um anime existem ao mesmo tempo, e vale
 	// APENAS no caminho episodio-a-episodio: um batch e um torrent so, entao limitar registros
 	// nao limitaria bytes nem arquivos na biblioteca (ver decisions.md). 0 significa SEM TETO
@@ -119,7 +124,6 @@ type Config struct {
 	WatchedEpisodesToKeep  int      `json:"watched_episodes_to_keep"`
 	ExcludedList           string   `json:"excluded_list,omitempty"`
 	ExcludedLists          []string `json:"excluded_lists"`
-	RenameFilesForJellyfin bool     `json:"rename_files_for_jellyfin"`
 	DownloadStatuses       []string `json:"download_statuses"`
 	DownloadMediaStatuses  []string `json:"download_media_statuses"`
 	DeleteStatuses         []string `json:"delete_statuses"`
@@ -133,24 +137,34 @@ type Config struct {
 	Priorities          nyaa.Priorities     `json:"priorities"`
 }
 
-// downloadDirName e o nome do diretorio de download dentro da biblioteca. O ponto o
-// esconde do scanner do Jellyfin no Linux; o arquivo .ignore criado por
-// Librarian.ProbePath cobre as demais plataformas.
+// downloadDirName e o nome do diretorio de download derivado quando TorrentDir nao esta
+// definido (comportamento legado: download dentro da biblioteca, hardlink na conclusao).
 const downloadDirName = ".torrents"
 
-// DownloadPath e o diretorio onde os torrents baixam e continuam semeando. Ele e derivado
-// de CompletedAnimePath, nunca armazenado: assim a restricao de hardlink (origem e destino
-// no mesmo filesystem) fica impossivel de violar por configuracao.
+// DownloadPath e o diretorio onde os torrents baixam. Com TorrentDir configurado, e ele;
+// sem, deriva de CompletedAnimePath (legado). Nunca armazenado em disco.
 //
-// Devolve "" quando a biblioteca nao esta configurada. Essa guarda e obrigatoria: sem ela
-// filepath.Join produziria o caminho relativo ".autoAnimeDownloader" e a sessao da rain
-// seria criada no diretorio de trabalho do processo. Com "", SessionManager.Ensure devolve
-// ErrSessionNotReady, que e o comportamento atual para config incompleta.
+// Devolve "" quando nem TorrentDir nem a biblioteca estao configurados. Essa guarda e
+// obrigatoria: sem ela filepath.Join produziria o caminho relativo ".autoAnimeDownloader"
+// e a sessao da rain seria criada no diretorio de trabalho do processo. Com "",
+// SessionManager.Ensure devolve ErrSessionNotReady, que e o comportamento atual para
+// config incompleta.
 func (c *Config) DownloadPath() string {
+	if c.TorrentDir != "" {
+		return c.TorrentDir
+	}
 	if c.CompletedAnimePath == "" {
 		return ""
 	}
 	return filepath.Join(c.CompletedAnimePath, downloadDirName)
+}
+
+// MoveOnComplete reporta se os arquivos devem ser MOVIDOS da pasta de download para a
+// biblioteca na conclusao (em vez de sofrer hardlink). E o modo quando TorrentDir esta
+// definido: sem mesmo filesystem nao ha hardlink, e o usuario desse modo nao semeia
+// apos a conclusao — o torrent e removido do cliente depois do move.
+func (c *Config) MoveOnComplete() bool {
+	return c.TorrentDir != ""
 }
 
 type AnimeSettings struct {
@@ -159,6 +173,12 @@ type AnimeSettings struct {
 	// de packs sucessivos nao tem o que o mova. Ausente le 0, que e o comportamento de antes.
 	// Anime de lista nunca usa este campo: quem manda la e a AniList.
 	Progress int `json:"progress,omitempty"`
+	// SearchQueryOverride substitui POR COMPLETO as variantes de titulo derivadas do AniList
+	// nas buscas do Nyaa, quando definido. Existe para os casos em que a convencao de release
+	// diverge do titulo oficial: o nome que os fansubs realmente usam pode nao ser nenhuma
+	// variante gerada. Vazio = comportamento padrao (variantes do AniList). NAO afeta a
+	// numeracao de episodios nem o offset absoluto — so o texto buscado.
+	SearchQueryOverride string `json:"search_query_override,omitempty"`
 }
 
 type FileManager struct {

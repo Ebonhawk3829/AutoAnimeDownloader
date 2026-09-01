@@ -65,8 +65,6 @@
     hintMinFreeDisk: m.config_hint_min_free_disk(),
     labelMaxConcurrent: m.config_label_max_concurrent(),
     hintMaxConcurrent: m.config_hint_max_concurrent(),
-    labelRenameJellyfin: m.config_label_rename_jellyfin(),
-    hintRenameJellyfin: m.config_hint_rename_jellyfin(),
     labelExcludedList: m.config_label_excluded_list(),
     hintExcludedList: m.config_hint_excluded_list(),
     labelDownloadStatuses: m.config_label_download_statuses(),
@@ -129,7 +127,6 @@
     delete_watched_episodes: true,
     watched_episodes_to_keep: 0,
     excluded_lists: [],
-    rename_files_for_jellyfin: false,
     download_statuses: ["CURRENT", "REPEATING"],
     download_media_statuses: ["RELEASING", "FINISHED"],
     delete_statuses: [],
@@ -542,19 +539,6 @@
                 placeholder="/path/to/completed"
                 required={true}
               />
-            </div>
-
-            <!-- A dica aparece sempre: é justamente ela que ajuda a decidir se vale ligar a
-                 chave, então esconder atrás do estado ligado esconde a informação útil.
-                 `Toggle` não tem prop de dica, daí o <p> irmão. -->
-            <div class="space-y-1.5 p-4.5">
-              <Toggle
-                id="rename_files_for_jellyfin"
-                bind:checked={config.rename_files_for_jellyfin}
-                label={(T && T.labelRenameJellyfin) || ""}
-                inline={true}
-              />
-              <p class="text-caption text-subtle">{T && T.hintRenameJellyfin}</p>
             </div>
 
             <div class="p-4.5">

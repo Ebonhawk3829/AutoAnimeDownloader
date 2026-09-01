@@ -32,6 +32,10 @@ MAX_EPISODES_PER_ANIME="${MAX_EPISODES_PER_ANIME:-12}"
 EPISODE_RETRY_LIMIT="${EPISODE_RETRY_LIMIT:-5}"
 DELETE_WATCHED_EPISODES="${DELETE_WATCHED_EPISODES:-true}"
 EXCLUDED_LISTS="${EXCLUDED_LISTS:-${EXCLUDED_LIST:-}}"
+# Opcional: quando definido, os torrents baixam aqui e os arquivos sao MOVIDOS para a
+# biblioteca na conclusao (sem seeding pos-conclusao). Vazio mantem o legado
+# (<completed_anime_path>/.torrents com hardlink).
+TORRENT_DIR="${TORRENT_DIR:-}"
 
 # Converter DELETE_WATCHED_EPISODES para boolean JSON
 if [ "$DELETE_WATCHED_EPISODES" = "true" ] || [ "$DELETE_WATCHED_EPISODES" = "1" ]; then
@@ -45,6 +49,7 @@ if [ ! -f "$CONFIG_FILE" ] || [ -n "$FORCE_CONFIG_UPDATE" ]; then
     cat > "$CONFIG_FILE" <<EOF
 {
   "completed_anime_path": "$COMPLETED_ANIME_PATH",
+  "torrent_dir": "$TORRENT_DIR",
   "anilist_usernames": $(csv_to_json_array "$ANILIST_USERNAMES"),
   "check_interval": $CHECK_INTERVAL,
   "max_episodes_per_anime": $MAX_EPISODES_PER_ANIME,

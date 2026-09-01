@@ -97,14 +97,21 @@ func RunAnimeDebug(animeId int, configs *files.Config, fileManager FileManagerIn
 
 	searcher := defaultNyaaSearcher()
 
+	// Override de busca por anime (AnimeSettings.SearchQueryOverride). Vazio = variantes
+	// padrao do AniList. Mesma fonte da producao, para o debug refletir o que ela faria.
+	customQuery := ""
+	if s, err := fileManager.LoadAnimeSettings(animeId); err == nil && s != nil {
+		customQuery = s.SearchQueryOverride
+	}
+
 	// Mesmo fluxo da producao, sem a segunda selecao: o debug nao tem registros salvos para
 	// relevar (ele ja declara que trata todo episodio como nao-baixado).
 	var magnetsForEpisodes map[int]resolvedMagnets
 	if isAnimeMovie(anime) {
-		episodesToDownload, magnetsForEpisodes = resolveMovie(configs, anime, animeTitle, episodesToDownload, searcher)
+		episodesToDownload, magnetsForEpisodes = resolveMovie(configs, anime, animeTitle, episodesToDownload, searcher, customQuery)
 	}
 	if magnetsForEpisodes == nil {
-		packs, singles, _ := partitionSearchResults(configs, searcher.searchAnime(anime.Media.Title, anime.Media.Synonyms, episodeNumbers(episodesToDownload)))
+		packs, singles, _ := partitionSearchResults(configs, searcher.searchAnime(anime.Media.Title, anime.Media.Synonyms, episodeNumbers(episodesToDownload), customQuery))
 		if !isAnimeMovie(anime) && len(episodesToDownload) > 1 {
 			firstPending := episodesToDownload[0].Episode
 			// Mesmo eixo de numeracao da producao: sem ele o debug reportaria "nenhum pack cobre"
@@ -133,7 +140,7 @@ func RunAnimeDebug(animeId int, configs *files.Config, fileManager FileManagerIn
 		// chamada o debug reportava "0 magnets" em One Piece/Naruto por nao ter buscado, e nao por
 		// o Nyaa nao ter.
 		if len(magnets) == 0 {
-			singleResults, _ := filterSearchResults(searcher.searchSingleEpisode(ep, anime.Media.Title, anime.Media.Synonyms, anime.Media.Relations, seriesLength), configs.MaxEpisodeTorrentSizeGB, configs.MinSeeders)
+			singleResults, _ := filterSearchResults(searcher.searchSingleEpisode(ep, anime.Media.Title, anime.Media.Synonyms, anime.Media.Relations, customQuery, seriesLength), configs.MaxEpisodeTorrentSizeGB, configs.MinSeeders)
 			for _, tr := range singleResults {
 				magnets = append(magnets, tr.MagnetLink)
 			}

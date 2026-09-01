@@ -61,7 +61,7 @@ func TestOrganizeTorrent_SingleEpisode(t *testing.T) {
 		saved: []files.EpisodeStruct{
 			{EpisodeHash: hash, AnimeName: "My Anime", EpisodeNumber: 5},
 		},
-		configs: &files.Config{CompletedAnimePath: completed, RenameFilesForJellyfin: true},
+		configs: &files.Config{CompletedAnimePath: completed},
 	}
 	lib := files.NewLibrarian(files.NewOSFileSystem())
 
@@ -109,7 +109,7 @@ func TestOrganizeTorrent_BatchRenamesEachFile(t *testing.T) {
 			{EpisodeHash: hash, AnimeName: "My Anime", EpisodeNumber: 1, IsBatch: true},
 			{EpisodeHash: hash, AnimeName: "My Anime", EpisodeNumber: 2, IsBatch: true},
 		},
-		configs: &files.Config{CompletedAnimePath: completed, RenameFilesForJellyfin: true},
+		configs: &files.Config{CompletedAnimePath: completed},
 	}
 
 	if ok := organizeTorrent(hash, backend, files.NewLibrarian(files.NewOSFileSystem()), fm, fm.configs); !ok {
@@ -177,12 +177,13 @@ func TestRemoveEpisodesAndLinks_BatchGuard(t *testing.T) {
 
 // --- P5.1: torrent completion event → JobOrganize enqueued AND executed ---
 
-// configWithCompletedWebhook returns a library config plus a webhook subscribed to
-// download_completed, echoing the interpolated variables into the request body.
+// configWithCompletedWebhook returns a move-mode config (TorrentDir set) plus a webhook
+// subscribed to download_completed, echoing the interpolated variables into the request body.
 func configWithCompletedWebhook(completedPath, url string) *files.Config {
 	return &files.Config{
 		CompletedAnimePath:     completedPath,
-		RenameFilesForJellyfin: true,
+		TorrentDir:             filepath.Join(completedPath, "..", "downloads"),
+		
 		Notifications: files.NotificationsConfig{
 			Webhooks: []files.WebhookPreset{{
 				Name:   "spy",
@@ -254,20 +255,19 @@ func TestTorrentCompletion_EnqueuesAndRunsOrganize(t *testing.T) {
 	if len(q.jobs) != 0 {
 		t.Errorf("job should be drained after a successful run, %d left", len(q.jobs))
 	}
-	wantLink := filepath.Join(completed, "My Anime", "My Anime - E05.mkv")
-	linkInfo, err := os.Stat(wantLink)
-	if err != nil {
-		t.Fatalf("expected the library hardlink %s to exist: %v", wantLink, err)
+	wantFile := filepath.Join(completed, "My Anime", "My Anime - E05.mkv")
+	if _, err := os.Stat(wantFile); err != nil {
+		t.Fatalf("expected the library file %s to exist: %v", wantFile, err)
 	}
-	srcInfo, err := os.Stat(filepath.Join(dataDir, "episode.mkv"))
-	if err != nil {
-		t.Fatalf("stat seeded file: %v", err)
+	// Move mode: the source is gone from the download folder and the torrent was removed.
+	if _, err := os.Stat(filepath.Join(dataDir, "episode.mkv")); !os.IsNotExist(err) {
+		t.Error("source file should have been moved out of the download folder")
 	}
-	if !os.SameFile(srcInfo, linkInfo) {
-		t.Error("library file must be a hardlink of the seeded file, not a copy")
+	if len(backend.List()) != 0 {
+		t.Errorf("torrent should have been removed after the move, %d left", len(backend.List()))
 	}
-	if len(fm.saved[0].LibraryPaths) != 1 || fm.saved[0].LibraryPaths[0] != wantLink {
-		t.Errorf("expected LibraryPaths written back to %s, got %v", wantLink, fm.saved[0].LibraryPaths)
+	if len(fm.saved[0].LibraryPaths) != 1 || fm.saved[0].LibraryPaths[0] != wantFile {
+		t.Errorf("expected LibraryPaths written back to %s, got %v", wantFile, fm.saved[0].LibraryPaths)
 	}
 	body := spy.waitForCall(t)
 	if !strings.Contains(body, `"anime":"My Anime"`) || !strings.Contains(body, `"episode":"5"`) {
@@ -322,8 +322,8 @@ func makeTorrentDir(t *testing.T, root string, names ...string) string {
 	return dir
 }
 
-// linkIntoLibrary hardlinks a torrent's files into the library through the real Librarian and
-// returns the created paths, so LibraryPaths in these tests are actual links on disk.
+// linkIntoLibrary moves a torrent's files into the library through the real Librarian and
+// returns the created paths, so LibraryPaths in these tests are actual files on disk.
 func linkIntoLibrary(t *testing.T, lib files.Librarian, dataDir, completed, animeName string, episodeNumber *int, isBatch bool) []string {
 	t.Helper()
 	created, err := lib.Organize(files.OrganizeRequest{
@@ -332,7 +332,6 @@ func linkIntoLibrary(t *testing.T, lib files.Librarian, dataDir, completed, anim
 		CompletedPath:  completed,
 		EpisodeNumber:  episodeNumber,
 		IsBatch:        isBatch,
-		RenameJellyfin: episodeNumber != nil,
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -359,14 +358,14 @@ func assertExists(t *testing.T, path, what string) {
 	}
 }
 
-// TestRemoveEpisodesAndLinks_RealHardlinks covers the "free BOTH links" contract with genuine
-// hardlinks on disk (t.TempDir() + OSFileSystem), which the mock-only batch-guard test never
+// TestRemoveEpisodesAndLinks_RealFiles covers the "free the library file" contract with real
+// files on disk (t.TempDir() + OSFileSystem), which the mock-only batch-guard test never
 // exercised: it never populated LibraryPaths, so the library half was untested.
-func TestRemoveEpisodesAndLinks_RealHardlinks(t *testing.T) {
+func TestRemoveEpisodesAndLinks_RealFiles(t *testing.T) {
 	five := 5
 	lib := files.NewLibrarian(files.NewOSFileSystem())
 
-	t.Run("single episode: library link and torrent both go", func(t *testing.T) {
+	t.Run("single episode: library file and torrent both go", func(t *testing.T) {
 		root := t.TempDir()
 		dataDir := makeTorrentDir(t, root, "episode.mkv")
 		completed := filepath.Join(root, "library")
@@ -385,7 +384,7 @@ func TestRemoveEpisodesAndLinks_RealHardlinks(t *testing.T) {
 			t.Fatalf("removeEpisodesAndLinks: %v", err)
 		}
 
-		assertGone(t, created[0], "library hardlink")
+		assertGone(t, created[0], "library file")
 		if _, ok := backend.Get(hash); ok {
 			t.Error("torrent (seeding copy) should have been removed")
 		}
@@ -394,9 +393,9 @@ func TestRemoveEpisodesAndLinks_RealHardlinks(t *testing.T) {
 		}
 	})
 
-	t.Run("surviving sibling: this episode's link goes, the torrent stays", func(t *testing.T) {
+	t.Run("surviving sibling: this episode's file goes, the torrent stays", func(t *testing.T) {
 		// Two non-batch episodes sharing one infohash: the batch guard must keep the torrent
-		// alive for the survivor while still freeing the deleted episode's library link.
+		// alive for the survivor while still freeing the deleted episode's library file.
 		root := t.TempDir()
 		dataDir := makeTorrentDir(t, root, "ep01.mkv", "ep02.mkv")
 		completed := filepath.Join(root, "library")
@@ -404,7 +403,7 @@ func TestRemoveEpisodesAndLinks_RealHardlinks(t *testing.T) {
 
 		created := linkIntoLibrary(t, lib, dataDir, completed, "My Anime", nil, false)
 		if len(created) != 2 {
-			t.Fatalf("expected 2 library links, got %v", created)
+			t.Fatalf("expected 2 library files, got %v", created)
 		}
 
 		saved := []files.EpisodeStruct{
@@ -419,14 +418,11 @@ func TestRemoveEpisodesAndLinks_RealHardlinks(t *testing.T) {
 			t.Fatalf("removeEpisodesAndLinks: %v", err)
 		}
 
-		assertGone(t, created[0], "deleted episode's library hardlink")
-		assertExists(t, created[1], "surviving sibling's library hardlink")
+		assertGone(t, created[0], "deleted episode's library file")
+		assertExists(t, created[1], "surviving sibling's library file")
 		if _, ok := backend.Get(hash); !ok {
 			t.Error("torrent must be kept while a sibling still references it")
 		}
-		// The seeding copies are untouched: only the library name was dropped.
-		assertExists(t, filepath.Join(dataDir, "ep01.mkv"), "seeded file of the deleted episode")
-		assertExists(t, filepath.Join(dataDir, "ep02.mkv"), "seeded file of the survivor")
 	})
 
 	t.Run("batch with a surviving sibling keeps both the torrent and its library files", func(t *testing.T) {
@@ -684,7 +680,7 @@ func TestOrganizeTorrent_BatchContinuousNumbering(t *testing.T) {
 			{EpisodeHash: hash, AnimeName: "My Anime Season 2", AnimeTotalEpisodes: 2, EpisodeNumber: 1, IsBatch: true},
 			{EpisodeHash: hash, AnimeName: "My Anime Season 2", AnimeTotalEpisodes: 2, EpisodeNumber: 2, IsBatch: true},
 		},
-		configs: &files.Config{CompletedAnimePath: completed, RenameFilesForJellyfin: true},
+		configs: &files.Config{CompletedAnimePath: completed},
 	}
 
 	if ok := organizeTorrent(hash, backend, files.NewLibrarian(files.NewOSFileSystem()), fm, fm.configs); !ok {

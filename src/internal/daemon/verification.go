@@ -61,17 +61,19 @@ func AnimeVerification(ctx context.Context, fileManager FileManagerInterface, st
 		return
 	}
 
-	// A biblioteca e montada com hardlinks. O endpoint de save da config sonda isso, mas
-	// configs escritos antes deste upgrade (ou direto no config.json pelo
-	// docker/entrypoint.sh) nunca passaram por ele. Sem esta porta um filesystem sem
-	// suporte a hardlink baixa alegremente enquanto todo JobOrganize morre, e a UI mostra
-	// um daemon saudavel. Sondar aqui devolve a mesma mensagem acionavel do endpoint, e
-	// aborta o passe: baixar o que nao da para organizar so enche o disco.
+	// A biblioteca e montada com moves a partir da pasta de download. O endpoint de
+	// save da config so valida isso, mas configs escritos antes deste upgrade (ou
+	// direto no config.json pelo docker/entrypoint.sh) nunca passaram por ele. Sem
+	// esta porta um par de pastas em filesystems diferentes faria todo JobOrganize
+	// morrer, e a UI mostraria um daemon saudavel. Sondar aqui devolve a mesma
+	// mensagem acionavel do endpoint, e aborta o passe: baixar o que nao da para
+	// mover so enche o disco.
 	if librarian != nil {
-		if err := librarian.ProbePath(configs.CompletedAnimePath); err != nil {
+		if err := librarian.ProbePath(configs.CompletedAnimePath, configs.DownloadPath()); err != nil {
 			logger.Logger.Error().Err(err).
 				Str("completed_anime_path", configs.CompletedAnimePath).
-				Msg("Completed anime path failed the hardlink probe; skipping verification")
+				Str("download_path", configs.DownloadPath()).
+				Msg("Path pair failed the move probe; skipping verification")
 			state.SetLastCheckError(fmt.Errorf("%w: %w", errCauseLibrary, err))
 			return
 		}
@@ -251,8 +253,15 @@ outer:
 			continue
 		}
 
+		// Override de busca por anime (AnimeSettings.SearchQueryOverride). Vazio = variantes
+		// padrao do AniList. Lido fora da goroutine: o mapa e imutavel neste ponto.
+		customQuery := ""
+		if s, err := fileManager.LoadAnimeSettings(anime.Media.Id); err == nil && s != nil {
+			customQuery = s.SearchQueryOverride
+		}
+
 		animeWg.Add(1)
-		go func(a anilist.MediaList) {
+		go func(a anilist.MediaList, q string) {
 			defer animeWg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
@@ -263,8 +272,8 @@ outer:
 			default:
 			}
 
-			resultCh <- processAnimeEpisodes(configs, backend, a, downloadedTorrents, savedEpisodes, seriesIndex, blockedMap, defaultNyaaSearcher())
-		}(anime)
+			resultCh <- processAnimeEpisodes(configs, backend, a, downloadedTorrents, savedEpisodes, seriesIndex, blockedMap, defaultNyaaSearcher(), q)
+		}(anime, customQuery)
 	}
 
 	animeWg.Wait()
