@@ -403,11 +403,20 @@ func importLibraryFiles(fileManager FileManagerInterface, configs *files.Config,
 	animes := anilistResponse.Data.Page.MediaList
 	knownInputs := make([]files.KnownAnimeInput, 0, len(animes))
 	for _, a := range animes {
+		// Candidate folder names: preferred title + romaji + native + synonyms. Release
+		// groups and previous library managers may have used any of them.
+		synonyms := a.Media.Synonyms
+		if a.Media.Title.Romaji != nil && *a.Media.Title.Romaji != "" {
+			synonyms = append(synonyms, *a.Media.Title.Romaji)
+		}
+		if a.Media.Title.Native != nil && *a.Media.Title.Native != "" {
+			synonyms = append(synonyms, *a.Media.Title.Native)
+		}
 		knownInputs = append(knownInputs, files.KnownAnimeInput{
 			ID:            a.Media.Id,
 			Name:          getAnimeTitleSafe(a),
 			TotalEpisodes: mediaTotalEpisodes(a),
-			Synonyms:      a.Media.Synonyms,
+			Synonyms:      synonyms,
 		})
 	}
 
