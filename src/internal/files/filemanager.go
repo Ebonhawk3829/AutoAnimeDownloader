@@ -82,7 +82,7 @@ type NotificationsConfig struct {
 }
 
 type Config struct {
-	CompletedAnimePath string   `json:"completed_anime_path"`
+	CompletedAnimePath string `json:"completed_anime_path"`
 	// TorrentDir e onde os torrents baixam e ficam ate a conclusao. Opcional: vazio deriva
 	// <completed_anime_path>/.torrents (comportamento legado). Quando definido, os arquivos
 	// sao MOVIDOS para a biblioteca ao concluir (sem hardlink, sem seeding pos-conclusao),

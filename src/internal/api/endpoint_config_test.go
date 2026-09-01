@@ -17,8 +17,8 @@ type stubLibrarian struct {
 	probeErr error
 }
 
-func (s *stubLibrarian) Organize(files.OrganizeRequest) ([]string, error) { return nil, nil }
-func (s *stubLibrarian) RemoveFromLibrary(string) error                   { return nil }
+func (s *stubLibrarian) Organize(files.OrganizeRequest) ([]string, error)   { return nil, nil }
+func (s *stubLibrarian) RemoveFromLibrary(string) error                     { return nil }
 func (s *stubLibrarian) ProbePath(completedPath, downloadPath string) error { return s.probeErr }
 
 type mockFileManager struct {

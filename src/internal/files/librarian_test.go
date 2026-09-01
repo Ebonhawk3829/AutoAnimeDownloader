@@ -106,7 +106,6 @@ func TestOrganizeSingleEpisodeJellyfin(t *testing.T) {
 		AnimeName:      "My Anime",
 		CompletedPath:  completed,
 		EpisodeNumber:  intPtr(5),
-		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -140,7 +139,6 @@ func TestOrganizeBatchRawNames(t *testing.T) {
 		AnimeName:      "Anime",
 		CompletedPath:  completed,
 		IsBatch:        true,
-		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -178,7 +176,6 @@ func TestOrganizeBatchJellyfinNames(t *testing.T) {
 		AnimeName:      "Anime",
 		CompletedPath:  completed,
 		IsBatch:        true,
-		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -214,7 +211,6 @@ func TestOrganizeBatchUnderscoreNames(t *testing.T) {
 		AnimeName:      "Anime",
 		CompletedPath:  completed,
 		IsBatch:        true,
-		
 	})
 	if err != nil {
 		t.Fatalf("Organize: %v", err)
@@ -548,8 +544,8 @@ func TestOrganizeBatchSameBasenameInSubfoldersKeepsBothFiles(t *testing.T) {
 	// number after the rename) collides and keeps its raw name, disambiguated by the
 	// relative path.
 	for path, want := range map[string]string{
-		filepath.Join(completed, "Anime", "Anime - E01.mkv"):                        "s1e1",
-		filepath.Join(completed, "Anime", "[Sub] Anime - 01 [1080p].mkv"):          "s2e1",
+		filepath.Join(completed, "Anime", "Anime - E01.mkv"):              "s1e1",
+		filepath.Join(completed, "Anime", "[Sub] Anime - 01 [1080p].mkv"): "s2e1",
 	} {
 		got, err := os.ReadFile(path)
 		if err != nil {
@@ -575,7 +571,6 @@ func TestOrganizeBatchContinuousNumberingMapsToEntryNumbers(t *testing.T) {
 		CompletedPath:  completed,
 		TotalEpisodes:  2,
 		IsBatch:        true,
-		
 	}); err != nil {
 		t.Fatalf("Organize: %v", err)
 	}
@@ -603,7 +598,6 @@ func TestOrganizeBatchExtraAboveTotalDoesNotShift(t *testing.T) {
 		CompletedPath:  completed,
 		TotalEpisodes:  2,
 		IsBatch:        true,
-		
 	}); err != nil {
 		t.Fatalf("Organize: %v", err)
 	}
@@ -630,7 +624,6 @@ func TestOrganizeBatchIncompletePackDoesNotShift(t *testing.T) {
 		CompletedPath:  completed,
 		TotalEpisodes:  12,
 		IsBatch:        true,
-		
 	}); err != nil {
 		t.Fatalf("Organize: %v", err)
 	}

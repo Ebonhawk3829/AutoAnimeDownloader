@@ -181,9 +181,9 @@ func TestRemoveEpisodesAndLinks_BatchGuard(t *testing.T) {
 // subscribed to download_completed, echoing the interpolated variables into the request body.
 func configWithCompletedWebhook(completedPath, url string) *files.Config {
 	return &files.Config{
-		CompletedAnimePath:     completedPath,
-		TorrentDir:             filepath.Join(completedPath, "..", "downloads"),
-		
+		CompletedAnimePath: completedPath,
+		TorrentDir:         filepath.Join(completedPath, "..", "downloads"),
+
 		Notifications: files.NotificationsConfig{
 			Webhooks: []files.WebhookPreset{{
 				Name:   "spy",
