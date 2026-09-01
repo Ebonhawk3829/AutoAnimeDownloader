@@ -265,7 +265,7 @@
                     id="webhook-name"
                     type="text"
                     bind:value={newWebhook.name}
-                    placeholder="ex: ntfy"
+                    placeholder="e.g. ntfy"
                     class="block rounded-md border-default bg-control text-heading shadow-sm focus:border-accent text-sm px-3 py-2"
                   />
                 </div>
@@ -289,7 +289,7 @@
                   id="webhook-url"
                   type="text"
                   bind:value={newWebhook.url}
-                  placeholder="https://ntfy.sh/meu-topico"
+                  placeholder="https://ntfy.sh/my-topic"
                   class="block w-full rounded-md border-default bg-control text-heading shadow-sm focus:border-accent text-sm px-3 py-2"
                 />
               </div>

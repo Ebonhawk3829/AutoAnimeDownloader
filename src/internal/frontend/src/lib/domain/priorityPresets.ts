@@ -14,14 +14,14 @@ export const PRESETS: Partial<Record<keyof Priorities, ListPreset[]>> = {
   codecs: [
     {
       key: "compat",
-      label: "Prefiro compatibilidade",
-      desc: "H.264 primeiro. Toca direto em qualquer player, sem transcode no servidor — a legenda continua soft. Arquivos maiores.",
+      label: "Prefer compatibility",
+      desc: "H.264 first. Plays directly in any player, no server transcoding — subtitles stay soft. Larger files.",
       first: ["h.264"],
     },
     {
       key: "space",
-      label: "Prefiro arquivos menores",
-      desc: "AV1/HEVC primeiro. Até metade do tamanho na mesma qualidade, mas exige player que decodifique — no navegador vira transcode.",
+      label: "Prefer smaller files",
+      desc: "AV1/HEVC first. Up to half the size at the same quality, but requires a player that decodes it — the browser transcodes.",
       first: ["av1", "hevc"],
     },
   ],
