@@ -116,27 +116,34 @@ type KnownAnime struct {
 	TotalEpisodes int
 }
 
-// KnownAnimeInput is one tracked anime as the caller sees it.
+// KnownAnimeInput is one tracked anime as the caller sees it. Synonyms are the AniList
+// synonyms: release groups often name folders after the romaji/original title while the
+// library manager used the English one (or vice versa), so every candidate name is
+// indexed.
 type KnownAnimeInput struct {
 	ID            int
 	Name          string
 	TotalEpisodes int
+	Synonyms      []string
 }
 
-// BuildKnownAnimes maps sanitized anime folder names to their identities. Duplicate
-// sanitized names (two entries collapsing to one folder name) keep the first: one folder
-// cannot hold two animes anyway.
+// BuildKnownAnimes maps sanitized candidate folder names (main title + synonyms) to
+// their identities. Duplicate sanitized names keep the first winner: one folder cannot
+// hold two animes anyway.
 func BuildKnownAnimes(animes []KnownAnimeInput) map[string]KnownAnime {
 	out := make(map[string]KnownAnime)
 	for _, a := range animes {
-		key := sanitizeName(a.Name)
-		if key == "" {
-			continue
+		candidates := append([]string{a.Name}, a.Synonyms...)
+		for _, cand := range candidates {
+			key := sanitizeName(cand)
+			if key == "" {
+				continue
+			}
+			if _, dup := out[key]; dup {
+				continue
+			}
+			out[key] = KnownAnime{ID: a.ID, Name: a.Name, TotalEpisodes: a.TotalEpisodes}
 		}
-		if _, dup := out[key]; dup {
-			continue
-		}
-		out[key] = KnownAnime{ID: a.ID, Name: a.Name, TotalEpisodes: a.TotalEpisodes}
 	}
 	return out
 }

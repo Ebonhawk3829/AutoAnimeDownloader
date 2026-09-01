@@ -176,3 +176,27 @@ func TestImportLibrary_MissingLibraryIsNoop(t *testing.T) {
 		t.Errorf("missing library should return nothing, got %v / %v", records, imported)
 	}
 }
+
+// Synonyms are indexed: a folder named after the romaji/original title matches an entry
+// whose main title is the English one.
+func TestImportLibrary_MatchesViaSynonyms(t *testing.T) {
+	tmp := t.TempDir()
+	library := filepath.Join(tmp, "library")
+	writeFile(t, filepath.Join(library, "Seihantai na Kimi to Boku 2nd Season", "[Erai-raws] Seihantai na Kimi to Boku 2nd Season - 01 [1080p].mkv"), "a")
+
+	known := BuildKnownAnimes([]KnownAnimeInput{
+		{ID: 210031, Name: "You and I Are Polar Opposites Season 2", Synonyms: []string{"Seihantai na Kimi to Boku 2nd Season", "正反対な君と僕 第2期"}},
+	})
+
+	records, _ := ImportLibrary(importTestFS(t), library, known, map[EpisodeKey]bool{})
+
+	if len(records) != 1 {
+		t.Fatalf("records = %d, want 1", len(records))
+	}
+	if records[0].AnimeID != 210031 || records[0].AnimeName != "You and I Are Polar Opposites Season 2" {
+		t.Errorf("record identity wrong: %+v", records[0])
+	}
+	if records[0].EpisodeNumber != 1 {
+		t.Errorf("episode = %d, want 1", records[0].EpisodeNumber)
+	}
+}

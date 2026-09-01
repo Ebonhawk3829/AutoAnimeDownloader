@@ -407,6 +407,7 @@ func importLibraryFiles(fileManager FileManagerInterface, configs *files.Config,
 			ID:            a.Media.Id,
 			Name:          getAnimeTitleSafe(a),
 			TotalEpisodes: mediaTotalEpisodes(a),
+			Synonyms:      a.Media.Synonyms,
 		})
 	}
 
