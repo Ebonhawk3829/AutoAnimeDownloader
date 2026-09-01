@@ -84,7 +84,7 @@
   "config_label_delete_statuses": "Status para deletar",
   "config_hint_delete_statuses": "Status do AniList que disparam a exclusão dos episódios baixados",
   "config_label_completed_path": "Pasta de animes completos",
-  "config_hint_completed_path": "Sua biblioteca do Jellyfin. Os episódios completos são vinculados aqui por hardlink, e os downloads em andamento ficam numa pasta oculta .torrents dentro dela.",
+  "config_hint_completed_path": "Sua biblioteca de animes. Os episódios completos são movidos (ou vinculados por hardlink) para cá. Com uma pasta de downloads separada configurada (torrent_dir), os downloads em andamento ficam lá; senão, numa pasta oculta .torrents dentro desta.",
   "config_label_delete_watched": "Deletar episódios assistidos automaticamente",
   "config_label_watched_keep": "Episódios assistidos a manter",
   "config_hint_watched_keep": "Use 0 para deletar todos os episódios assistidos",
