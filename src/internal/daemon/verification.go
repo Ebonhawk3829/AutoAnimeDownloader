@@ -209,6 +209,16 @@ func AnimeVerification(ctx context.Context, fileManager FileManagerInterface, st
 	// was down and a save-path change. JobOrganize is idempotent, so re-runs are no-ops.
 	reconcileLibrary(downloadedTorrents, savedEpisodes, jobQueue)
 
+	// Import scan: adopt video files already sitting in the library into the saved-episode
+	// records, so content placed by hand (or left by a previous manager) is never
+	// re-downloaded. Runs every pass but only writes records for episodes that have no
+	// record yet; adopted episodes are normal records, so the watched-delete flow covers
+	// them too.
+	imported := importLibraryFiles(fileManager, configs, anilistResponse, savedEpisodes)
+	if len(imported) > 0 {
+		savedEpisodes = append(savedEpisodes, imported...)
+	}
+
 	blockedMap := make(map[files.EpisodeKey]bool, len(blockedEpisodes))
 	for _, k := range blockedEpisodes {
 		blockedMap[k] = true
@@ -376,6 +386,56 @@ func clearLibraryPathsAfterRootSwap(fileManager FileManagerInterface, completedP
 		Int("episodes", len(stale)).
 		Str("completed_anime_path", completedPath).
 		Msg("Root swap: the library folder is gone, cleared the stale library links; episodes will be redownloaded and reorganized at the configured path")
+}
+
+// importLibraryFiles adopts video files already in the library into saved-episode
+// records (files.ImportLibrary), persisting them so the next passes see them as
+// recorded. Returns the newly adopted records (empty when nothing was imported).
+//
+// Known animes come from the AniList collection of this pass — a folder matching no
+// entry is ignored, never guessed. Failures are logged and return nil: the import is a
+// convenience, never a reason to skip the pass.
+func importLibraryFiles(fileManager FileManagerInterface, configs *files.Config, anilistResponse *anilist.AniListResponse, savedEpisodes []files.EpisodeStruct) []files.EpisodeStruct {
+	if configs.CompletedAnimePath == "" || anilistResponse == nil {
+		return nil
+	}
+
+	animes := anilistResponse.Data.Page.MediaList
+	knownInputs := make([]files.KnownAnimeInput, 0, len(animes))
+	for _, a := range animes {
+		knownInputs = append(knownInputs, files.KnownAnimeInput{
+			ID:            a.Media.Id,
+			Name:          getAnimeTitleSafe(a),
+			TotalEpisodes: mediaTotalEpisodes(a),
+		})
+	}
+
+	knownMap := files.BuildKnownAnimes(knownInputs)
+
+	existingKeys := make(map[files.EpisodeKey]bool, len(savedEpisodes))
+	for _, ep := range savedEpisodes {
+		existingKeys[ep.Key()] = true
+	}
+
+	records, imported := files.ImportLibrary(files.NewOSFileSystem(), configs.CompletedAnimePath, knownMap, existingKeys)
+	if len(records) == 0 {
+		return nil
+	}
+
+	if err := fileManager.UpsertEpisodes(records); err != nil {
+		logger.Logger.Warn().Err(err).Int("count", len(records)).Msg("Import scan: failed to persist adopted episodes; will retry next pass")
+		return nil
+	}
+
+	logger.Logger.Info().Int("count", len(imported)).Msg("Import scan: adopted existing library files into episode records")
+	for _, imp := range imported {
+		logger.Logger.Info().
+			Str("anime", imp.AnimeName).
+			Int("episode", imp.Episode).
+			Str("path", imp.Path).
+			Msg("Import scan: adopted")
+	}
+	return records
 }
 
 // reconcileLibrary enqueues JobOrganize for completed torrents whose saved episodes have

@@ -96,31 +96,31 @@ func batchTitle(event Event, items []item) string {
 	}
 	switch event {
 	case NewEpisode:
-                return fmt.Sprintf("%d new episodes detected", len(items))
-        case DownloadFailed:
-                return fmt.Sprintf("%d download failures", len(items))
-        case DownloadCompleted:
-                return fmt.Sprintf("%d downloads completed", len(items))
-        }
-        return ""
+		return fmt.Sprintf("%d new episodes detected", len(items))
+	case DownloadFailed:
+		return fmt.Sprintf("%d download failures", len(items))
+	case DownloadCompleted:
+		return fmt.Sprintf("%d downloads completed", len(items))
+	}
+	return ""
 }
 
 func eventStrings(animeName string, episode int, event Event, reason string) (title, message string) {
-        switch event {
-        case NewEpisode:
-                return "New episode detected",
-                        fmt.Sprintf("%s EP %d detected, starting download", animeName, episode)
-        case DownloadFailed:
-                if reason == "" {
-                        reason = "all attempts failed"
-                }
-                return "Download failed",
-                        fmt.Sprintf("%s EP %d failed: %s", animeName, episode, reason)
-        case DownloadCompleted:
-                return "Download completed",
-                        fmt.Sprintf("%s EP %d downloaded successfully", animeName, episode)
-        }
-        return "", ""
+	switch event {
+	case NewEpisode:
+		return "New episode detected",
+			fmt.Sprintf("%s EP %d detected, starting download", animeName, episode)
+	case DownloadFailed:
+		if reason == "" {
+			reason = "all attempts failed"
+		}
+		return "Download failed",
+			fmt.Sprintf("%s EP %d failed: %s", animeName, episode, reason)
+	case DownloadCompleted:
+		return "Download completed",
+			fmt.Sprintf("%s EP %d downloaded successfully", animeName, episode)
+	}
+	return "", ""
 }
 
 // jsonEscape devolve o valor pronto para ser colado DENTRO de uma string JSON (sem as aspas
