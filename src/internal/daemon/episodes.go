@@ -235,12 +235,15 @@ func processAnimeEpisodes(
 		// falso a cada passada do loop enquanto o episodio nao aparecesse no Nyaa, e ainda
 		// fazia attemptDownloadWithRetries logar "falhou apos todas as tentativas" com zero
 		// tentativas.
+		// Not-found nao dispara mais DownloadFailed: o episodio continua na fila e as passadas
+		// seguintes procuram de novo — "ainda nao saiu no Nyaa" e pendencia, nao falha (um episodio
+		// que demora dias gerava o mesmo push hora apos hora). O warn abaixo e a trilha de log,
+		// e searchIssue mantem o episodio visivel no relatorio de problemas da UI.
 		if len(magnets) == 0 {
 			logger.Logger.Warn().
 				Str("episode", epName).
 				Msg("No torrent found for episode")
 			result.issues = append(result.issues, searchIssue(anime.Media.Id, animeTitle, ep.Episode, searchStats, configs))
-			notifications.Notify(configs, notifications.DownloadFailed, animeTitle, ep.Episode, notifications.ReasonNotFound)
 			continue
 		}
 

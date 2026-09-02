@@ -36,6 +36,26 @@ with `make build PLATFORM=windows` (produces the tray-enabled binary, cross-comp
 mingw-w64 inside `docker/Dockerfile.build.windows`), or with the manual `go build` below
 (host-only, no tray icon).
 
+## Local homelab deploy (this server)
+
+The homelab runs a locally-built image, not a release artifact. The flow is a
+direct build of the multi-stage `docker/Dockerfile` (frontend + embed handled
+inside the build), then a compose recreate:
+
+```bash
+# from the repo root — build the image
+docker build -f docker/Dockerfile -t autoanimedownloader:local .
+
+# then deploy (dc decrypts .env.enc; never use raw `docker compose` on the homelab)
+cd ~/media-stack && dc media up -d autoanimedownloader
+```
+
+The `autoanimedownloader:local` tag is what `media-stack/docker-compose.yml`
+references for the `autoanimedownloader` service. This is separate from
+`make build`, which produces release binaries/zips via the
+`Dockerfile.build.*` toolchain images — you only need that path for packaging
+releases, not for running here.
+
 ## Manual build (single platform, no Docker)
 
 ```bash
