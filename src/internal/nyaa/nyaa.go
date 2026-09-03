@@ -483,6 +483,13 @@ func formatSize(bytes int64) string {
 
 // deduplicateByMagnet removes duplicate TorrentResult entries by magnet link.
 func deduplicateByMagnet(results []TorrentResult) []TorrentResult {
+	return DeduplicateTorrentResults(results)
+}
+
+// DeduplicateTorrentResults removes duplicate TorrentResult entries by magnet
+// link, keeping the first occurrence. Exported for the daemon's variant merge
+// (searchNyaaWithVariants), which pools results from multiple title queries.
+func DeduplicateTorrentResults(results []TorrentResult) []TorrentResult {
 	seen := make(map[string]bool, len(results))
 	unique := make([]TorrentResult, 0, len(results))
 	for _, r := range results {
@@ -1083,16 +1090,54 @@ func isUncensored(torrentName string) bool {
 
 // fansubPriority retorna um valor de prioridade para o fansub (menor = melhor)
 // Baseado nas regras do Nyaa (Seção 4 do documento de regras)
+//
+// Tokens de fallback ("dub", "raw") ficam num saco separado dos grupos
+// desconhecidos: um release dublado não pode ganhar de um fansub que nem está
+// na lista. Clevatess S02E09 (2026-09-03): "[Yameii] ... [English Dub]" casava
+// com o token "dub" (índice 10) e vencia AnoZu/VARYG (índice 12 = desconhecido),
+// ignorando o espírito da IgnoreList. Agora desconhecido (len-1) vence fallback
+// (len+índice), então um grupo qualquer subbed ganha de "dub"/"raw" de última hora.
 func fansubPriority(torrentName string) int {
 	nameLower := strings.ToLower(torrentName)
 	fansubs := ActivePriorities().Fansubs
-	best := len(fansubs)
+	best := len(fansubs) - 1
+	bestFallback := -1
 	for i, f := range fansubs {
-		if strings.Contains(nameLower, f) && i < best {
+		if !strings.Contains(nameLower, f) {
+			continue
+		}
+		if isFallbackFansubToken(f) {
+			if bestFallback < 0 {
+				bestFallback = i
+			}
+		} else if i < best {
 			best = i
 		}
 	}
-	return best
+	if best < len(fansubs)-1 {
+		return best
+	}
+	if bestFallback >= 0 {
+		return len(fansubs) + bestFallback
+	}
+	return len(fansubs) - 1
+}
+
+// isFallbackFansubToken reporta se o token é um marcador de idioma (dub, raw) e
+// não um grupo de fansub real. Ficam no fim da lista default só para ordenar
+// entre si; nunca devem pontuar melhor que um grupo desconhecido.
+func isFallbackFansubToken(token string) bool {
+	switch strings.ToLower(token) {
+	case "dub", "raw":
+		return true
+	}
+	return false
+}
+
+// FansubPriorityForTest expõe fansubPriority para os testes de unidade
+// (pacote unit não consegue chamar o símbolo não exportado).
+func FansubPriorityForTest(torrentName string) int {
+	return fansubPriority(torrentName)
 }
 
 // extractSource extrai a fonte do release (BD, WEB-DL, TV, etc.)

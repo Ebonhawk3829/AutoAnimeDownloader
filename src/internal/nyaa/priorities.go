@@ -46,7 +46,10 @@ func DefaultPriorities() Priorities {
 		// já canonicaliza para "hevc"/"h.264" — seriam tokens inertes.
 		Codecs:     []string{"h.264", "hevc", "av1", "xvid"},
 		Audio:      []string{"flac", "dts-hd", "truehd", "ddp", "aac", "ac3", "mp3"},
-		IgnoreList: []string{"[dub]", "[raw]", "[hardcoded]", "[hc]", "re-encode"},
+		// "english dub" cobre releases tipo "[Yameii] ... [English Dub]" que o "[dub]"
+		// literal não pega (sem colchete antes). "dub" sozinho pegaria "dublado" junto —
+		// intencionalmente não: quem quiser filtrar dubs PT-BR adiciona o token na UI.
+		IgnoreList: []string{"[dub]", "english dub", "[raw]", "[hardcoded]", "[hc]", "re-encode"},
 	}
 }
 

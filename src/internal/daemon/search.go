@@ -127,6 +127,7 @@ func buildTitleVariants(titles anilist.Title, customQuery string) []string {
 func searchNyaaWithVariants(titles anilist.Title, customQuery string, searchFn nyaaSearchFunc, logLabel string) []nyaa.TorrentResult {
 	variants := buildTitleVariants(titles, customQuery)
 
+	var merged []nyaa.TorrentResult
 	for i, variant := range variants {
 		logger.Logger.Debug().
 			Str("title", variant).
@@ -143,17 +144,33 @@ func searchNyaaWithVariants(titles anilist.Title, customQuery string, searchFn n
 				Msgf("Error searching Nyaa for %s", logLabel)
 			continue
 		}
-		if result != nil {
+
+		// Merge em vez de first-match-wins: cada variante tem seu proprio gate de
+		// titulo (titleMatchesQuery compara contra a variante que a achou), e releases
+		// reais podem casar so com uma delas. Clevatess S02E09 (2026-09-03): o release
+		// ToonsHub traz o titulo da temporada 1 no nome, entao so a variante english
+		// ("clevatess season 2") o aceitava — com o corte no primeiro resultado ele
+		// nunca entrava no pool.
+		if len(result) > 0 {
 			logger.Logger.Info().
 				Str("title", variant).
 				Int("torrents_found", len(result)).
 				Int("attempt", i+1).
 				Msgf("Found %s torrents on Nyaa", logLabel)
-			return result
+			merged = append(merged, result...)
 		}
 	}
 
-	return nil
+	if len(merged) <= 1 {
+		return merged
+	}
+
+	deduped := nyaa.DeduplicateTorrentResults(merged)
+	logger.Logger.Info().
+		Int("torrents_found", len(deduped)).
+		Int("variants", len(variants)).
+		Msgf("Merged %s torrents across title variants on Nyaa", logLabel)
+	return deduped
 }
 
 // totalEpisodes vai para o nyaa apenas para decidir o zero-padding da query (0 = desconhecido).
